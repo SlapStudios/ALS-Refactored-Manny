@@ -36,6 +36,9 @@ public:
 	FAlsCrouchingSettings Crouching;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Settings")
+	FAlsProningSettings Proning;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Settings")
 	FAlsInAirSettings InAir;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Settings")

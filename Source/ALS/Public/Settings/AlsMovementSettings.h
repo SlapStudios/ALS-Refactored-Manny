@@ -59,7 +59,8 @@ struct ALS_API FAlsMovementStanceSettings
 	TMap<FGameplayTag, FAlsMovementGaitSettings> Stances
 	{
 		{AlsStanceTags::Standing, {}},
-		{AlsStanceTags::Crouching, {}}
+		{AlsStanceTags::Crouching, {}},
+		{AlsStanceTags::Proning, {}}
 	};
 };
 

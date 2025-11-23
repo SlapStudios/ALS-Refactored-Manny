@@ -20,7 +20,7 @@ protected:
 	TObjectPtr<UAlsCameraComponent> Camera;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "State", Transient)
-	FGameplayTag ViewMode{AlsViewModeTags::ThirdPerson};
+	FGameplayTag ViewMode{AlsViewModeTags::FirstPerson};
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "State", Transient)
 	FGameplayTag LocomotionMode;

@@ -10,8 +10,22 @@
 #include "Utility/AlsRotation.h"
 #include "Utility/AlsUtility.h"
 #include "Utility/AlsVector.h"
+#include "Engine/ScopedMovementUpdate.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(AlsCharacterMovementComponent)
+
+DECLARE_CYCLE_STAT(TEXT("AlsChar ClientUpdatePositionAfterServerUpdate"), STAT_AlsCharacterMovementClientUpdatePositionAfterServerUpdate, STATGROUP_Als);
+
+struct FAlsScopedMeshMovementUpdate
+{
+	FAlsScopedMeshMovementUpdate(USkeletalMeshComponent* Mesh, bool bEnabled = true)
+		: ScopedMoveUpdate(bEnabled && /*CharacterMovementCVars::bDeferCharacterMeshMovement*/ false ? Mesh : nullptr, EScopedUpdate::DeferredUpdates)
+	{
+	}
+
+private:
+	FScopedMovementUpdate ScopedMoveUpdate;
+};
 
 void FAlsCharacterNetworkMoveData::ClientFillNetworkMoveData(const FSavedMove_Character& Move, const ENetworkMoveType MoveType)
 {
@@ -50,6 +64,8 @@ void FAlsSavedMove::Clear()
 	RotationMode = AlsRotationModeTags::ViewDirection;
 	Stance = AlsStanceTags::Standing;
 	MaxAllowedGait = AlsGaitTags::Running;
+
+	bWantsToProne = false;
 }
 
 void FAlsSavedMove::SetMoveFor(ACharacter* Character, const float NewDeltaTime, const FVector& NewAcceleration,
@@ -63,6 +79,8 @@ void FAlsSavedMove::SetMoveFor(ACharacter* Character, const float NewDeltaTime, 
 		RotationMode = Movement->RotationMode;
 		Stance = Movement->Stance;
 		MaxAllowedGait = Movement->MaxAllowedGait;
+
+		bWantsToProne = Movement->bWantsToProne;
 	}
 }
 
@@ -114,6 +132,18 @@ void FAlsSavedMove::PrepMoveFor(ACharacter* Character)
 	}
 }
 
+uint8 FAlsSavedMove::GetCompressedFlags() const
+{
+	uint8 Result = Super::GetCompressedFlags();
+
+	if (bWantsToProne)
+	{
+		Result |= FLAG_Custom_0;
+	}
+
+	return Result;
+}
+
 FAlsNetworkPredictionData::FAlsNetworkPredictionData(const UCharacterMovementComponent& Movement) : Super{Movement} {}
 
 FSavedMovePtr FAlsNetworkPredictionData::AllocateNewMove()
@@ -130,12 +160,14 @@ UAlsCharacterMovementComponent::UAlsCharacterMovementComponent()
 	bNetworkAlwaysReplicateTransformUpdateTimestamp = true; // Required for view network smoothing.
 
 	SetCrouchedHalfHeight(56.0f);
+	SetPronedHalfHeight(28.0f);
 
 	// Default values for standing walking movement.
 
 	MinAnalogWalkSpeed = 25.0f;
 	MaxWalkSpeed = 375.0f;
 	MaxWalkSpeedCrouched = 150.0f;
+	MaxWalkSpeedProned = 90.0f;
 	MaxAccelerationWalking = 2000.0f;
 	BrakingDecelerationWalking = 1500.0f;
 	GroundFriction = 4.0f;
@@ -153,6 +185,7 @@ UAlsCharacterMovementComponent::UAlsCharacterMovementComponent()
 	BrakingFrictionFactor = 0.0f;
 
 	bCanWalkOffLedgesWhenCrouching = true;
+	bCanWalkOffLedgesWhenProning = true;
 
 	// Subtracted from the capsule radius to check how far the actor is allowed to
 	// perch on the edge of a surface. Currently this is half the capsule radius.
@@ -228,12 +261,27 @@ void UAlsCharacterMovementComponent::SetMovementMode(const EMovementMode NewMove
 
 void UAlsCharacterMovementComponent::OnMovementModeChanged(const EMovementMode PreviousMovementMode, const uint8 PreviousCustomMode)
 {
+	if (!HasValidData())
+	{
+		return;
+	}
+
+	if (MovementMode == MOVE_Walking)
+	{
+		bProneMaintainsBaseLocation = true;
+	}
+	else
+	{
+		bProneMaintainsBaseLocation = false;
+	}
+
 	Super::OnMovementModeChanged(PreviousMovementMode, PreviousCustomMode);
 
 	// This removes some very noticeable changes in the mesh location when the
 	// character automatically uncrouches at the end of the roll in the air.
 
 	bCrouchMaintainsBaseLocation = true;
+	bProneMaintainsBaseLocation = true;
 }
 
 bool UAlsCharacterMovementComponent::ShouldPerformAirControlForPathFollowing() const
@@ -288,6 +336,23 @@ void UAlsCharacterMovementComponent::CalcVelocity(const float DeltaTime, const f
 	Super::CalcVelocity(DeltaTime, Friction, bFluid, BrakingDeceleration);
 }
 
+float UAlsCharacterMovementComponent::GetMaxSpeed() const
+{
+	switch (MovementMode)
+	{
+	case MOVE_Walking:
+	case MOVE_NavWalking:
+		return IsCrouching() ? MaxWalkSpeedCrouched : (IsProning() ? MaxWalkSpeedProned : MaxWalkSpeed);
+	case MOVE_Falling:
+	case MOVE_Swimming:
+	case MOVE_Flying:
+	case MOVE_Custom:
+	case MOVE_None:
+	default:
+		return Super::GetMaxSpeed();
+	}
+}
+
 float UAlsCharacterMovementComponent::GetMaxAcceleration() const
 {
 	if (IsMovingOnGround())
@@ -296,6 +361,101 @@ float UAlsCharacterMovementComponent::GetMaxAcceleration() const
 	}
 
 	return Super::GetMaxAcceleration();
+}
+
+bool UAlsCharacterMovementComponent::CanAttemptJump() const
+{
+	return Super::CanAttemptJump() && !bWantsToProne;
+}
+
+void UAlsCharacterMovementComponent::UpdateCharacterStateBeforeMovement(float DeltaSeconds)
+{
+	if (CharacterOwner->GetLocalRole() == ROLE_SimulatedProxy)
+	{
+		return;
+	}
+
+	// Cache input intents for this tick.
+	const bool bRequestCrouch = bWantsToCrouch;
+	const bool bRequestProne = bWantsToProne;
+
+	// 1) Exit invalid or undesired states first.
+	if (IsCrouching() && (!bRequestCrouch || !CanCrouchInCurrentState()))
+	{
+		UnCrouch(false);
+	}
+	if (IsProning() && (!bRequestProne || !CanProneInCurrentState()))
+	{
+		UnProne(false);
+	}
+
+	// 2) Enforce mutual exclusivity: leave the opposite state before entering the new one.
+	if (bRequestProne && IsCrouching())
+	{
+		UnCrouch(false);
+	}
+	if (bRequestCrouch && IsProning())
+	{
+		UnProne(false);
+	}
+
+	// 3) Enter desired state. Prone has precedence if both are requested.
+	if (bRequestProne && !IsProning() && CanProneInCurrentState())
+	{
+		Prone(false);
+	}
+	else if (bRequestCrouch && !IsCrouching() && CanCrouchInCurrentState())
+	{
+		Crouch(false);
+	}
+}
+
+void UAlsCharacterMovementComponent::UpdateCharacterStateAfterMovement(float DeltaSeconds)
+{
+	if (CharacterOwner->GetLocalRole() != ROLE_SimulatedProxy)
+	{
+		// Uncrouch if no longer allowed to be crouched
+		if (IsCrouching() && !CanCrouchInCurrentState())
+		{
+			UnCrouch(false);
+		}
+	}
+
+	if (CharacterOwner->GetLocalRole() != ROLE_SimulatedProxy)
+	{
+		// Unprone if no longer allowed to be proned
+		if (IsProning() && !CanProneInCurrentState())
+		{
+			UnProne(false);
+		}
+	}
+}
+
+bool UAlsCharacterMovementComponent::CanWalkOffLedges() const
+{
+	if (!Super::CanWalkOffLedges())
+	{
+		return false;
+	}
+
+	if (!bCanWalkOffLedgesWhenProning && IsProning())
+	{
+		return false;
+	}
+
+	return bCanWalkOffLedges;
+}
+
+void UAlsCharacterMovementComponent::UpdateFromCompressedFlags(uint8 Flags)
+{
+	Super::UpdateFromCompressedFlags(Flags);
+
+	if (!CharacterOwner)
+	{
+		return;
+	}
+
+	bWantsToProne = ((Flags & FSavedMove_Character::FLAG_Custom_0) != 0);
 }
 
 void UAlsCharacterMovementComponent::ControlledCharacterMove(const FVector& InputVector, const float DeltaTime)
@@ -623,6 +783,125 @@ void UAlsCharacterMovementComponent::PhysCustom(const float DeltaTime, int32 Ite
 	MoveUpdatedComponent(Velocity * DeltaTime, UpdatedComponent->GetComponentQuat(), false);
 
 	Super::PhysCustom(DeltaTime, IterationsCount);
+}
+
+bool UAlsCharacterMovementComponent::ClientUpdatePositionAfterServerUpdate()
+{
+	SCOPE_CYCLE_COUNTER(STAT_AlsCharacterMovementClientUpdatePositionAfterServerUpdate);
+	if (!HasValidData())
+	{
+		return false;
+	}
+
+	FNetworkPredictionData_Client_Character* ClientData = GetPredictionData_Client_Character();
+	check(ClientData);
+
+	if (!ClientData->bUpdatePosition)
+	{
+		return false;
+	}
+
+	ClientData->bUpdatePosition = false;
+
+	// Don't do any network position updates on things running PHYS_RigidBody
+	if (CharacterOwner->GetRootComponent() && CharacterOwner->GetRootComponent()->IsSimulatingPhysics())
+	{
+		return false;
+	}
+
+	if (ClientData->SavedMoves.Num() == 0)
+	{
+		UE_LOG(LogNetPlayerMovement, Verbose, TEXT("ClientUpdatePositionAfterServerUpdate No saved moves to replay"), ClientData->SavedMoves.Num());
+
+		// With no saved moves to resimulate, the move the server updated us with is the last move we've done, no resimulation needed.
+		CharacterOwner->bClientResimulateRootMotion = false;
+		if (CharacterOwner->bClientResimulateRootMotionSources)
+		{
+			// With no resimulation, we just update our current root motion to what the server sent us
+			UE_LOG(LogRootMotion, VeryVerbose, TEXT("CurrentRootMotion getting updated to ServerUpdate state: %s"), *CharacterOwner->GetName());
+			CurrentRootMotion.UpdateStateFrom(CharacterOwner->SavedRootMotion);
+			CharacterOwner->bClientResimulateRootMotionSources = false;
+		}
+		CharacterOwner->SavedRootMotion.Clear();
+
+		return false;
+	}
+
+	// Save important values that might get affected by the replay.
+	const float SavedAnalogInputModifier = AnalogInputModifier;
+	const FRootMotionMovementParams BackupRootMotionParams = RootMotionParams; // For animation root motion
+	const FRootMotionSourceGroup BackupRootMotion = CurrentRootMotion;
+	const bool bRealPressedJump = CharacterOwner->bPressedJump;
+	const float RealJumpMaxHoldTime = CharacterOwner->JumpMaxHoldTime;
+	const int32 RealJumpMaxCount = CharacterOwner->JumpMaxCount;
+	const bool bRealProne = bWantsToProne;
+	const bool bRealForceMaxAccel = bForceMaxAccel;
+	CharacterOwner->bClientWasFalling = (MovementMode == MOVE_Falling);
+	CharacterOwner->bClientUpdating = true;
+	bForceNextFloorCheck = true;
+
+	// Defer all mesh child updates until all movement completes.
+	FAlsScopedMeshMovementUpdate ScopedMeshUpdate(CharacterOwner->GetMesh(), /*CharacterMovementCVars::bDeferCharacterMeshMovementForAllCorrections*/ true);
+
+	// Replay moves that have not yet been acked.
+	UE_LOG(LogNetPlayerMovement, Verbose, TEXT("ClientUpdatePositionAfterServerUpdate Replaying %d Moves, starting at Timestamp %f"), ClientData->SavedMoves.Num(), ClientData->SavedMoves[0]->TimeStamp);
+	for (int32 i = 0; i < ClientData->SavedMoves.Num(); i++)
+	{
+		FSavedMove_Character* const CurrentMove = ClientData->SavedMoves[i].Get();
+		checkSlow(CurrentMove != nullptr);
+
+		// Make current SavedMove accessible to any functions that might need it.
+		SetCurrentReplayedSavedMove(CurrentMove);
+
+		CurrentMove->PrepMoveFor(CharacterOwner);
+
+		if (ShouldUsePackedMovementRPCs())
+		{
+			// Make current move data accessible to MoveAutonomous or any other functions that might need it.
+			if (FCharacterNetworkMoveData* NewMove = GetNetworkMoveDataContainer().GetNewMoveData())
+			{
+				SetCurrentNetworkMoveData(NewMove);
+				NewMove->ClientFillNetworkMoveData(*CurrentMove, FCharacterNetworkMoveData::ENetworkMoveType::NewMove);
+			}
+		}
+
+		MoveAutonomous(CurrentMove->TimeStamp, CurrentMove->DeltaTime, CurrentMove->GetCompressedFlags(), CurrentMove->Acceleration);
+
+		CurrentMove->PostUpdate(CharacterOwner, FSavedMove_Character::PostUpdate_Replay);
+		SetCurrentNetworkMoveData(nullptr);
+		SetCurrentReplayedSavedMove(nullptr);
+	}
+	const bool bPostReplayPressedJump = CharacterOwner->bPressedJump;
+
+	if (FSavedMove_Character* const PendingMove = ClientData->PendingMove.Get())
+	{
+		PendingMove->bForceNoCombine = true;
+	}
+
+	// Restore saved values.
+	AnalogInputModifier = SavedAnalogInputModifier;
+	RootMotionParams = BackupRootMotionParams;
+	CurrentRootMotion = BackupRootMotion;
+	if (CharacterOwner->bClientResimulateRootMotionSources)
+	{
+		// If we were resimulating root motion sources, it's because we had mismatched state
+		// with the server - we just resimulated our SavedMoves and now need to restore
+		// CurrentRootMotion with the latest "good state"
+		UE_LOG(LogRootMotion, VeryVerbose, TEXT("CurrentRootMotion getting updated after ServerUpdate replays: %s"), *CharacterOwner->GetName());
+		CurrentRootMotion.UpdateStateFrom(CharacterOwner->SavedRootMotion);
+		CharacterOwner->bClientResimulateRootMotionSources = false;
+	}
+	CharacterOwner->SavedRootMotion.Clear();
+	CharacterOwner->bClientResimulateRootMotion = false;
+	CharacterOwner->bClientUpdating = false;
+	CharacterOwner->bPressedJump = bRealPressedJump || bPostReplayPressedJump;
+	CharacterOwner->JumpMaxHoldTime = RealJumpMaxHoldTime;
+	CharacterOwner->JumpMaxCount = RealJumpMaxCount;
+	bWantsToProne = bRealProne;
+	bForceMaxAccel = bRealForceMaxAccel;
+	bForceNextFloorCheck = true;
+
+	return (ClientData->SavedMoves.Num() > 0);
 }
 
 void UAlsCharacterMovementComponent::ComputeFloorDist(const FVector& CapsuleLocation, float LineDistance,
@@ -1040,4 +1319,292 @@ bool UAlsCharacterMovementComponent::TryConsumePrePenetrationAdjustmentVelocity(
 	bPrePenetrationAdjustmentVelocityValid = false;
 
 	return true;
+}
+
+void UAlsCharacterMovementComponent::Prone(bool bClientSimulation /*= false*/)
+{
+	if (!HasValidData())
+	{
+		return;
+	}
+
+	if (!bClientSimulation && !CanProneInCurrentState())
+	{
+		return;
+	}
+
+	AAlsCharacter* Character = Cast<AAlsCharacter>(CharacterOwner);
+	if (!IsValid(Character))
+	{
+		return;
+	}
+
+	// See if collision is already at desired size.
+	if (Character->GetCapsuleComponent()->GetUnscaledCapsuleHalfHeight() == PronedHalfHeight)
+	{
+		if (!bClientSimulation)
+		{
+			Character->SetIsProned(true);
+		}
+		Character->OnStartProne(0.f, 0.f);
+		return;
+	}
+
+	if (bClientSimulation && Character->GetLocalRole() == ROLE_SimulatedProxy)
+	{
+		// restore collision size before proning
+		AAlsCharacter* DefaultCharacter = Character->GetClass()->GetDefaultObject<AAlsCharacter>();
+		Character->GetCapsuleComponent()->SetCapsuleSize(DefaultCharacter->GetCapsuleComponent()->GetUnscaledCapsuleRadius(), DefaultCharacter->GetCapsuleComponent()->GetUnscaledCapsuleHalfHeight());
+		bShrinkProxyCapsule = true;
+	}
+
+	// Change collision size to proning dimensions
+	const float ComponentScale = Character->GetCapsuleComponent()->GetShapeScale();
+	const float OldUnscaledHalfHeight = Character->GetCapsuleComponent()->GetUnscaledCapsuleHalfHeight();
+	const float OldUnscaledRadius = Character->GetCapsuleComponent()->GetUnscaledCapsuleRadius();
+	// Height is not allowed to be smaller than radius.
+	const float ClampedPronedHalfHeight = FMath::Max3(0.f, OldUnscaledRadius, PronedHalfHeight);
+	Character->GetCapsuleComponent()->SetCapsuleSize(OldUnscaledRadius, ClampedPronedHalfHeight);
+	float HalfHeightAdjust = (OldUnscaledHalfHeight - ClampedPronedHalfHeight);
+	float ScaledHalfHeightAdjust = HalfHeightAdjust * ComponentScale;
+
+	if (!bClientSimulation)
+	{
+		// Proning to a larger height? (this is rare)
+		if (ClampedPronedHalfHeight > OldUnscaledHalfHeight)
+		{
+			FCollisionQueryParams CapsuleParams(SCENE_QUERY_STAT(ProneTrace), false, Character);
+			FCollisionResponseParams ResponseParam;
+			InitCollisionParams(CapsuleParams, ResponseParam);
+			const bool bEncroached = GetWorld()->OverlapBlockingTestByChannel(UpdatedComponent->GetComponentLocation() + ScaledHalfHeightAdjust * GetGravityDirection(), GetWorldToGravityTransform(),
+				UpdatedComponent->GetCollisionObjectType(), GetPawnCapsuleCollisionShape(SHRINK_None), CapsuleParams, ResponseParam);
+
+			// If encroached, cancel
+			if (bEncroached)
+			{
+				Character->GetCapsuleComponent()->SetCapsuleSize(OldUnscaledRadius, OldUnscaledHalfHeight);
+				return;
+			}
+		}
+
+		if (bProneMaintainsBaseLocation)
+		{
+			// Intentionally not using MoveUpdatedComponent, where a horizontal plane constraint would prevent the base of the capsule from staying at the same spot.
+			UpdatedComponent->MoveComponent(ScaledHalfHeightAdjust * GetGravityDirection(), UpdatedComponent->GetComponentQuat(), true, nullptr, EMoveComponentFlags::MOVECOMP_NoFlags, ETeleportType::TeleportPhysics);
+		}
+
+		Character->SetIsProned(true);
+	}
+
+	bForceNextFloorCheck = true;
+
+	// OnStartProne takes the change from the Default size, not the current one (though they are usually the same).
+	const float MeshAdjust = ScaledHalfHeightAdjust;
+	AAlsCharacter* DefaultCharacter = Character->GetClass()->GetDefaultObject<AAlsCharacter>();
+	HalfHeightAdjust = (DefaultCharacter->GetCapsuleComponent()->GetUnscaledCapsuleHalfHeight() - ClampedPronedHalfHeight);
+	ScaledHalfHeightAdjust = HalfHeightAdjust * ComponentScale;
+
+	AdjustProxyCapsuleSize();
+	Character->OnStartProne(HalfHeightAdjust, ScaledHalfHeightAdjust);
+
+	// Don't smooth this change in mesh position
+	if ((bClientSimulation && Character->GetLocalRole() == ROLE_SimulatedProxy) || (IsNetMode(NM_ListenServer) && Character->GetRemoteRole() == ROLE_AutonomousProxy))
+	{
+		FNetworkPredictionData_Client_Character* ClientData = GetPredictionData_Client_Character();
+		if (ClientData)
+		{
+			ClientData->MeshTranslationOffset -= MeshAdjust * -GetGravityDirection();
+			ClientData->OriginalMeshTranslationOffset = ClientData->MeshTranslationOffset;
+		}
+	}
+}
+
+void UAlsCharacterMovementComponent::UnProne(bool bClientSimulation /*= false*/)
+{
+	if (!HasValidData())
+	{
+		return;
+	}
+
+	AAlsCharacter* Character = Cast<AAlsCharacter>(CharacterOwner);
+	if (!IsValid(Character))
+	{
+		return;
+	}
+
+	AAlsCharacter* DefaultCharacter = Character->GetClass()->GetDefaultObject<AAlsCharacter>();
+
+	// See if collision is already at desired size.
+	if (Character->GetCapsuleComponent()->GetUnscaledCapsuleHalfHeight() == DefaultCharacter->GetCapsuleComponent()->GetUnscaledCapsuleHalfHeight())
+	{
+		if (!bClientSimulation)
+		{
+			Character->SetIsProned(false);
+		}
+		Character->OnEndProne(0.f, 0.f);
+		return;
+	}
+
+	const float CurrentPronedHalfHeight = Character->GetCapsuleComponent()->GetScaledCapsuleHalfHeight();
+
+	const float ComponentScale = Character->GetCapsuleComponent()->GetShapeScale();
+	const float OldUnscaledHalfHeight = Character->GetCapsuleComponent()->GetUnscaledCapsuleHalfHeight();
+	const float HalfHeightAdjust = DefaultCharacter->GetCapsuleComponent()->GetUnscaledCapsuleHalfHeight() - OldUnscaledHalfHeight;
+	const float ScaledHalfHeightAdjust = HalfHeightAdjust * ComponentScale;
+	const FVector PawnLocation = UpdatedComponent->GetComponentLocation();
+
+	// Grow to unproned size.
+	check(Character->GetCapsuleComponent());
+
+	if (!bClientSimulation)
+	{
+		// Try to stay in place and see if the larger capsule fits. We use a slightly taller capsule to avoid penetration.
+		const UWorld* MyWorld = GetWorld();
+		const float SweepInflation = UE_KINDA_SMALL_NUMBER * 10.f;
+		FCollisionQueryParams CapsuleParams(SCENE_QUERY_STAT(ProneTrace), false, Character);
+		FCollisionResponseParams ResponseParam;
+		InitCollisionParams(CapsuleParams, ResponseParam);
+
+		// Compensate for the difference between current capsule size and standing size
+		const FCollisionShape StandingCapsuleShape = GetPawnCapsuleCollisionShape(SHRINK_HeightCustom, -SweepInflation - ScaledHalfHeightAdjust); // Shrink by negative amount, so actually grow it.
+		const ECollisionChannel CollisionChannel = UpdatedComponent->GetCollisionObjectType();
+		bool bEncroached = true;
+
+		if (!bProneMaintainsBaseLocation)
+		{
+			// Expand in place
+			bEncroached = MyWorld->OverlapBlockingTestByChannel(PawnLocation, GetWorldToGravityTransform(), CollisionChannel, StandingCapsuleShape, CapsuleParams, ResponseParam);
+
+			if (bEncroached)
+			{
+				// Try adjusting capsule position to see if we can avoid encroachment.
+				if (ScaledHalfHeightAdjust > 0.f)
+				{
+					// Shrink to a short capsule, sweep down to base to find where that would hit something, and then try to stand up from there.
+					float PawnRadius, PawnHalfHeight;
+					Character->GetCapsuleComponent()->GetScaledCapsuleSize(PawnRadius, PawnHalfHeight);
+					const float ShrinkHalfHeight = PawnHalfHeight - PawnRadius;
+					const float TraceDist = PawnHalfHeight - ShrinkHalfHeight;
+					const FVector Down = TraceDist * GetGravityDirection();
+
+					FHitResult Hit(1.f);
+					const FCollisionShape ShortCapsuleShape = GetPawnCapsuleCollisionShape(SHRINK_HeightCustom, ShrinkHalfHeight);
+					const bool bBlockingHit = MyWorld->SweepSingleByChannel(Hit, PawnLocation, PawnLocation + Down, GetWorldToGravityTransform(), CollisionChannel, ShortCapsuleShape, CapsuleParams);
+					if (Hit.bStartPenetrating)
+					{
+						bEncroached = true;
+					}
+					else
+					{
+						// Compute where the base of the sweep ended up, and see if we can stand there
+						const float DistanceToBase = (Hit.Time * TraceDist) + ShortCapsuleShape.Capsule.HalfHeight;
+						const FVector Adjustment = (-DistanceToBase + StandingCapsuleShape.Capsule.HalfHeight + SweepInflation + MIN_FLOOR_DIST / 2.f) * -GetGravityDirection();
+						const FVector NewLoc = PawnLocation + Adjustment;
+						bEncroached = MyWorld->OverlapBlockingTestByChannel(NewLoc, GetWorldToGravityTransform(), CollisionChannel, StandingCapsuleShape, CapsuleParams, ResponseParam);
+						if (!bEncroached)
+						{
+							// Intentionally not using MoveUpdatedComponent, where a horizontal plane constraint would prevent the base of the capsule from staying at the same spot.
+							UpdatedComponent->MoveComponent(NewLoc - PawnLocation, UpdatedComponent->GetComponentQuat(), false, nullptr, EMoveComponentFlags::MOVECOMP_NoFlags, ETeleportType::TeleportPhysics);
+						}
+					}
+				}
+			}
+		}
+		else
+		{
+			// Expand while keeping base location the same.
+			FVector StandingLocation = PawnLocation + (StandingCapsuleShape.GetCapsuleHalfHeight() - CurrentPronedHalfHeight) * -GetGravityDirection();
+			bEncroached = MyWorld->OverlapBlockingTestByChannel(StandingLocation, GetWorldToGravityTransform(), CollisionChannel, StandingCapsuleShape, CapsuleParams, ResponseParam);
+
+			if (bEncroached)
+			{
+				if (IsMovingOnGround())
+				{
+					// Something might be just barely overhead, try moving down closer to the floor to avoid it.
+					const float MinFloorDist = UE_KINDA_SMALL_NUMBER * 10.f;
+					if (CurrentFloor.bBlockingHit && CurrentFloor.FloorDist > MinFloorDist)
+					{
+						StandingLocation -= (CurrentFloor.FloorDist - MinFloorDist) * -GetGravityDirection();
+						bEncroached = MyWorld->OverlapBlockingTestByChannel(StandingLocation, GetWorldToGravityTransform(), CollisionChannel, StandingCapsuleShape, CapsuleParams, ResponseParam);
+					}
+				}
+			}
+
+			if (!bEncroached)
+			{
+				// Commit the change in location.
+				UpdatedComponent->MoveComponent(StandingLocation - PawnLocation, UpdatedComponent->GetComponentQuat(), false, nullptr, EMoveComponentFlags::MOVECOMP_NoFlags, ETeleportType::TeleportPhysics);
+				bForceNextFloorCheck = true;
+			}
+		}
+
+		// If still encroached then abort.
+		if (bEncroached)
+		{
+			return;
+		}
+
+		Character->SetIsProned(false);
+	}
+	else
+	{
+		bShrinkProxyCapsule = true;
+	}
+
+	// Now call SetCapsuleSize() to cause touch/untouch events and actually grow the capsule
+	Character->GetCapsuleComponent()->SetCapsuleSize(DefaultCharacter->GetCapsuleComponent()->GetUnscaledCapsuleRadius(), DefaultCharacter->GetCapsuleComponent()->GetUnscaledCapsuleHalfHeight(), true);
+
+	const float MeshAdjust = ScaledHalfHeightAdjust;
+	AdjustProxyCapsuleSize();
+	Character->OnEndProne(HalfHeightAdjust, ScaledHalfHeightAdjust);
+
+	// Don't smooth this change in mesh position
+	if ((bClientSimulation && Character->GetLocalRole() == ROLE_SimulatedProxy) || (IsNetMode(NM_ListenServer) && Character->GetRemoteRole() == ROLE_AutonomousProxy))
+	{
+		FNetworkPredictionData_Client_Character* ClientData = GetPredictionData_Client_Character();
+		if (ClientData)
+		{
+			ClientData->MeshTranslationOffset += MeshAdjust * -GetGravityDirection();
+			ClientData->OriginalMeshTranslationOffset = ClientData->MeshTranslationOffset;
+		}
+	}
+}
+
+bool UAlsCharacterMovementComponent::CanProneInCurrentState() const
+{
+#if 0
+	if (!CanEverProne())
+	{
+		return false;
+	}
+#endif
+
+	return (IsFalling() || IsMovingOnGround()) && UpdatedComponent && !UpdatedComponent->IsSimulatingPhysics();
+}
+
+void UAlsCharacterMovementComponent::SetPronedHalfHeight(const float NewValue)
+{
+	PronedHalfHeight = NewValue;
+
+	auto* Character{ Cast<AAlsCharacter>(CharacterOwner) };
+	if (IsValid(Character))
+	{
+		Character->RecalculatePronedEyeHeight();
+	}
+}
+
+float UAlsCharacterMovementComponent::GetPronedHalfHeight() const
+{
+	return PronedHalfHeight;
+}
+
+bool UAlsCharacterMovementComponent::IsProning() const
+{
+	AAlsCharacter* Character = Cast<AAlsCharacter>(CharacterOwner);
+	if (IsValid(Character))
+	{
+		return Character->IsProned();
+	}
+
+	return false;
 }

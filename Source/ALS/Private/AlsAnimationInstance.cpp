@@ -339,6 +339,7 @@ void UAlsAnimationInstance::RefreshPose()
 
 	PoseState.StandingAmount = GetCurveValue(Curves, UAlsConstants::PoseStandingCurveName());
 	PoseState.CrouchingAmount = GetCurveValue(Curves, UAlsConstants::PoseCrouchingCurveName());
+	PoseState.ProningAmount = GetCurveValue(Curves, UAlsConstants::PoseProningCurveName());
 
 	PoseState.MovingAmount = GetCurveValue(Curves, UAlsConstants::PoseMovingCurveName());
 
@@ -365,13 +366,40 @@ void UAlsAnimationInstance::RefreshViewOnGameThread()
 
 	const auto& View{Character->GetViewState()};
 
-	ViewState.Rotation = View.Rotation;
-	ViewState.YawSpeed = View.YawSpeed;
+#if 0 // Not fully working yet
+
+	// Detect if this anim instance is running on an auxiliary mesh
+	// (your FP arms mesh), not the main character mesh.
+	const bool bIsAuxMesh = GetSkelMeshComponent() != Character->GetMesh();
+
+	// Detect the listen-server "remote autonomous proxy" case.
+	// This is exactly the case that ALS enables extra view smoothing for
+	// in PossessedBy() on a listen server. :contentReference[oaicite:5]{index=5}
+	const bool bListenServerRemoteAutonomousProxy =
+		Character->IsNetMode(NM_ListenServer) &&
+		Character->GetRemoteRole() == ROLE_AutonomousProxy;
+
+	if (bIsAuxMesh && bListenServerRemoteAutonomousProxy)
+	{
+		// When spectating that remote pawn in first person on the listen server,
+		// force FP arms to use the raw replicated view rotation instead of the
+		// smoothed / damped rotation, to remove the perceived "camera drag".
+		ViewState.Rotation = Character->GetReplicatedViewRotation();
+		ViewState.YawSpeed = View.YawSpeed; // keep same yaw speed calc, that's fine
+	}
+	else
+#endif
+	{
+		// Default ALS behavior: use the (possibly smoothed) view rotation
+		// that RefreshView() wrote into the character's ViewState. :contentReference[oaicite:6]{index=6}
+		ViewState.Rotation = View.Rotation;
+		ViewState.YawSpeed = View.YawSpeed;
+	}
 }
 
 void UAlsAnimationInstance::RefreshView(const float DeltaTime)
 {
-	if (!LocomotionAction.IsValid())
+	if (!LocomotionAction.IsValid() || (Character && Character->GetViewMode() == AlsViewModeTags::FirstPerson))
 	{
 		ViewState.YawAngle = FMath::UnwindDegrees(UE_REAL_TO_FLOAT(ViewState.Rotation.Yaw - LocomotionState.Rotation.Yaw));
 		ViewState.PitchAngle = FMath::UnwindDegrees(UE_REAL_TO_FLOAT(ViewState.Rotation.Pitch - LocomotionState.Rotation.Pitch));
@@ -688,39 +716,54 @@ void UAlsAnimationInstance::RefreshLocomotionOnGameThread()
 
 	if (MovementBase.bHasRelativeRotation)
 	{
-		// Offset the angle to keep it relative to the movement base.
+		// Keep PreviousYawAngle relative to the movement base.
 		PreviousYawAngle = FMath::UnwindDegrees(UE_REAL_TO_FLOAT(PreviousYawAngle + MovementBase.DeltaRotation.Yaw));
 	}
 
-	const auto& Proxy{GetProxyOnGameThread<FAnimInstanceProxy>()};
-	const auto& ActorTransform{Proxy.GetActorTransform()};
-	const auto& MeshRelativeTransform{Proxy.GetComponentRelativeTransform()};
+	const auto& Proxy{ GetProxyOnGameThread<FAnimInstanceProxy>() };
+	const auto& ActorTransform{ Proxy.GetActorTransform() };
+	const auto& MeshRelativeTransform{ Proxy.GetComponentRelativeTransform() };
 
 	static const auto* EnableListenServerSmoothingConsoleVariable{
 		IConsoleManager::Get().FindConsoleVariable(TEXT("p.NetEnableListenServerSmoothing"))
 	};
 	check(EnableListenServerSmoothingConsoleVariable != nullptr)
 
-	if (Movement->NetworkSmoothingMode == ENetworkSmoothingMode::Disabled ||
-	    (Character->GetLocalRole() != ROLE_SimulatedProxy &&
-	     !(Character->IsNetMode(NM_ListenServer) && EnableListenServerSmoothingConsoleVariable->GetBool())))
-	{
-		// If the network smoothing is disabled, use the regular actor transform.
+		const auto* Mesh{ GetSkelMeshComponent() };
 
+	// Auxiliary mesh = any skeletal mesh that is not the character's main mesh
+	// and is actually attached to something (for example: first person arms mesh
+	// attached to the main third-person mesh). This mesh's relative transform is
+	// NOT relative to the actor capsule, so ALS smoothing math is invalid here.
+	const bool bAuxiliaryMesh =
+		Mesh != Character->GetMesh() &&
+		IsValid(Mesh->GetAttachParent());
+
+	// Decide which transform source to use.
+	if (Movement->NetworkSmoothingMode == ENetworkSmoothingMode::Disabled ||
+		(Character->GetLocalRole() != ROLE_SimulatedProxy &&
+			!(Character->IsNetMode(NM_ListenServer) && EnableListenServerSmoothingConsoleVariable->GetBool())) ||
+		bAuxiliaryMesh)
+	{
+		// Use the regular actor transform. This is also forced for auxiliary meshes
+		// (first-person arms, etc.) so they don't get an extra -90 yaw applied on
+		// listen servers.
 		LocomotionState.Location = ActorTransform.GetLocation();
 		LocomotionState.Rotation = ActorTransform.Rotator();
 		LocomotionState.RotationQuaternion = ActorTransform.GetRotation();
 	}
-	else if (GetSkelMeshComponent()->IsUsingAbsoluteRotation())
+	else if (Mesh->IsUsingAbsoluteRotation())
 	{
-		LocomotionState.Location = ActorTransform.TransformPosition(
-			MeshRelativeTransform.GetLocation() - Character->GetBaseTranslationOffset());
+		LocomotionState.Location =
+			ActorTransform.TransformPosition(
+				MeshRelativeTransform.GetLocation() - Character->GetBaseTranslationOffset());
 
 		LocomotionState.Rotation = ActorTransform.Rotator();
 		LocomotionState.RotationQuaternion = ActorTransform.GetRotation();
 	}
 	else
 	{
+		// Regular ALS listen-server smoothing path for the main mesh.
 		const auto SmoothTransform{
 			ActorTransform * FTransform{
 				MeshRelativeTransform.GetRotation() * Character->GetBaseRotationOffset().Inverse(),
@@ -734,13 +777,14 @@ void UAlsAnimationInstance::RefreshLocomotionOnGameThread()
 	}
 
 	LocomotionState.YawVelocity = bCanCalculateRateOfChange
-		                              ? FMath::UnwindDegrees(UE_REAL_TO_FLOAT(
-			                                LocomotionState.Rotation.Yaw - PreviousYawAngle)) / ActorDeltaTime
-		                              : 0.0f;
+		? FMath::UnwindDegrees(
+			UE_REAL_TO_FLOAT(LocomotionState.Rotation.Yaw - PreviousYawAngle)) /
+		ActorDeltaTime
+		: 0.0f;
 
 	LocomotionState.Scale = UE_REAL_TO_FLOAT(Proxy.GetComponentTransform().GetScale3D().Z);
 
-	const auto* Capsule{Character->GetCapsuleComponent()};
+	const auto* Capsule{ Character->GetCapsuleComponent() };
 
 	LocomotionState.CapsuleRadius = Capsule->GetScaledCapsuleRadius();
 	LocomotionState.CapsuleHalfHeight = Capsule->GetScaledCapsuleHalfHeight();
@@ -1054,6 +1098,12 @@ void UAlsAnimationInstance::RefreshCrouchingMovement()
 
 	CrouchingState.PlayRate = FMath::Clamp(
 		Speed / (Settings->Crouching.AnimatedCrouchSpeed * CrouchingState.StrideBlendAmount),
+		UE_KINDA_SMALL_NUMBER, 2.0f);
+
+	ProningState.StrideBlendAmount = Settings->Proning.StrideBlendAmountCurve->GetFloatValue(Speed);
+
+	ProningState.PlayRate = FMath::Clamp(
+		Speed / (Settings->Proning.AnimatedCrouchSpeed * ProningState.StrideBlendAmount),
 		UE_KINDA_SMALL_NUMBER, 2.0f);
 }
 
@@ -1718,6 +1768,9 @@ void UAlsAnimationInstance::StopQueuedTransitionAndTurnInPlaceAnimations()
 	UAlsMontageUtility::StopMontagesWithSlot(this, UAlsConstants::TurnInPlaceCrouchingSlotName(),
 	                                         TransitionsState.QueuedStopTransitionsBlendOutDuration);
 
+	UAlsMontageUtility::StopMontagesWithSlot(this, UAlsConstants::TurnInPlaceProningSlotName(),
+	                                         TransitionsState.QueuedStopTransitionsBlendOutDuration);
+
 	TransitionsState.bStopTransitionsQueued = false;
 	TransitionsState.QueuedStopTransitionsBlendOutDuration = -1.0f;
 }
@@ -1873,7 +1926,7 @@ void UAlsAnimationInstance::RefreshTurnInPlace()
 	}
 	else if (Stance == AlsStanceTags::Crouching)
 	{
-		TurnInPlaceSlotName = UAlsConstants::TurnInPlaceCrouchingSlotName();
+		TurnInPlaceSlotName = UAlsConstants::TurnInPlaceProningSlotName();
 
 		if (FMath::Abs(ViewState.YawAngle) < Settings->TurnInPlace.Turn180AngleThreshold)
 		{
@@ -1886,6 +1939,23 @@ void UAlsAnimationInstance::RefreshTurnInPlace()
 			TurnInPlaceSettings = bTurnLeft
 				                      ? Settings->TurnInPlace.CrouchingTurn180Left
 				                      : Settings->TurnInPlace.CrouchingTurn180Right;
+		}
+	}
+	else if (Stance == AlsStanceTags::Proning)
+	{
+		TurnInPlaceSlotName = UAlsConstants::TurnInPlaceProningSlotName();
+
+		if (FMath::Abs(ViewState.YawAngle) < Settings->TurnInPlace.Turn180AngleThreshold)
+		{
+			TurnInPlaceSettings = bTurnLeft
+				                      ? Settings->TurnInPlace.ProningTurn90Left
+				                      : Settings->TurnInPlace.ProningTurn90Right;
+		}
+		else
+		{
+			TurnInPlaceSettings = bTurnLeft
+				                      ? Settings->TurnInPlace.ProningTurn180Left
+				                      : Settings->TurnInPlace.ProningTurn180Right;
 		}
 	}
 

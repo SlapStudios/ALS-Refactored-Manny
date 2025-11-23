@@ -13,3 +13,15 @@ struct ALS_API FAlsCrouchingState
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ALS", Meta = (ClampMin = 0, ClampMax = 2, ForceUnits = "x"))
 	float PlayRate{1.0f};
 };
+
+USTRUCT(BlueprintType)
+struct ALS_API FAlsProningState
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ALS", Meta = (ClampMin = 0, ClampMax = 1))
+	float StrideBlendAmount{0.0f};
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ALS", Meta = (ClampMin = 0, ClampMax = 2, ForceUnits = "x"))
+	float PlayRate{1.0f};
+};

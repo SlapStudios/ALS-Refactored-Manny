@@ -829,6 +829,8 @@ void AAlsCharacter::OnRagdollingStarted_Implementation() {}
 
 void AAlsCharacter::SetRagdollTargetLocation(const FVector& NewTargetLocation)
 {
+	if (!bReplicateRagdoll) return;
+
 	if (RagdollTargetLocation != NewTargetLocation)
 	{
 		RagdollTargetLocation = NewTargetLocation;
@@ -884,7 +886,7 @@ void AAlsCharacter::RefreshRagdolling(const float DeltaTime)
 
 	// Zero target location means that it hasn't been replicated yet, so we can't apply the logic below.
 
-	if (!bLocallyControlled && !RagdollTargetLocation.IsZero())
+	if (bReplicateRagdoll && !bLocallyControlled && !RagdollTargetLocation.IsZero())
 	{
 		// Apply ragdoll location corrections.
 

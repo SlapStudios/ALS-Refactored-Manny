@@ -25,6 +25,7 @@ namespace AlsStanceTags
 {
 	ALS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Standing)
 	ALS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Crouching)
+	ALS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Proning)
 }
 
 namespace AlsGaitTags
@@ -57,6 +58,7 @@ namespace AlsLocomotionActionTags
 	ALS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Mantling)
 	ALS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Ragdolling)
 	ALS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(GettingUp)
+	ALS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(ProningTransition)
 }
 
 namespace AlsGroundedEntryModeTags

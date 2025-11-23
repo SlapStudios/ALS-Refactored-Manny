@@ -45,6 +45,8 @@ public:
 
 	FGameplayTag MaxAllowedGait{AlsGaitTags::Running};
 
+	uint8 bWantsToProne : 1;
+
 public:
 	virtual void Clear() override;
 
@@ -57,6 +59,8 @@ public:
 	                         APlayerController* Player, const FVector& PreviousStartLocation) override;
 
 	virtual void PrepMoveFor(ACharacter* Character) override;
+
+	virtual uint8 GetCompressedFlags() const override;
 };
 
 class ALS_API FAlsNetworkPredictionData : public FNetworkPredictionData_Client_Character
@@ -151,7 +155,20 @@ public:
 
 	virtual void CalcVelocity(float DeltaTime, float Friction, bool bFluid, float BrakingDeceleration) override;
 
+	virtual float GetMaxSpeed() const override;
+
 	virtual float GetMaxAcceleration() const override;
+
+	virtual bool CanAttemptJump() const override;
+
+	virtual void UpdateCharacterStateBeforeMovement(float DeltaSeconds) override;
+
+	virtual void UpdateCharacterStateAfterMovement(float DeltaSeconds) override;
+
+	virtual bool CanWalkOffLedges() const override;
+
+protected:
+	virtual void UpdateFromCompressedFlags(uint8 Flags) override;
 
 protected:
 	virtual void ControlledCharacterMove(const FVector& InputVector, float DeltaTime) override;
@@ -169,6 +186,8 @@ protected:
 
 	virtual void PhysCustom(float DeltaTime, int32 IterationsCount) override;
 
+	virtual bool ClientUpdatePositionAfterServerUpdate() override;
+
 public:
 	virtual void ComputeFloorDist(const FVector& CapsuleLocation, float LineDistance, float SweepDistance, FFindFloorResult& OutFloorResult,
 	                              float SweepRadius, const FHitResult* DownwardSweepResult) const override;
@@ -184,14 +203,13 @@ protected:
 
 	virtual void MoveAutonomous(float ClientTimeStamp, float DeltaTime, uint8 CompressedFlags, const FVector& NewAcceleration) override;
 
+	virtual void RefreshGaitSettings();
+
 public:
 	UFUNCTION(BlueprintCallable, Category = "ALS|Character Movement")
 	void SetMovementSettings(UAlsMovementSettings* NewMovementSettings);
 
 	const FAlsMovementGaitSettings& GetGaitSettings() const;
-
-private:
-	void RefreshGaitSettings();
 
 public:
 	const FGameplayTag& GetRotationMode() const;
@@ -210,8 +228,8 @@ public:
 	// Varies from 0 to 3, where 0 is stopped, 1 is walking, 2 is running, and 3 is sprinting.
 	float GetGaitAmount() const;
 
-private:
-	void RefreshGroundedMovementSettings();
+protected:
+	virtual void RefreshGroundedMovementSettings();
 
 public:
 	void SetMovementModeLocked(bool bNewMovementModeLocked);
@@ -219,6 +237,41 @@ public:
 	void SetInputBlocked(bool bNewInputBlocked);
 
 	bool TryConsumePrePenetrationAdjustmentVelocity(FVector& OutVelocity);
+
+public:
+	UPROPERTY(Category="Als Character Movement: Walking", EditAnywhere, BlueprintReadWrite, meta=(ClampMin="0", UIMin="0", ForceUnits="cm/s"))
+	float MaxWalkSpeedProned;
+
+protected:
+	UPROPERTY(Category="Character Movement (General Settings)", EditAnywhere, BlueprintReadWrite, BlueprintSetter=SetPronedHalfHeight, BlueprintGetter=GetPronedHalfHeight, meta=(ClampMin="0", UIMin="0", ForceUnits=cm))
+	float PronedHalfHeight;
+
+public:
+	UPROPERTY(Category="Character Movement: Walking", EditAnywhere, BlueprintReadWrite)
+	uint8 bCanWalkOffLedgesWhenProning:1;
+
+public:
+	UPROPERTY(Category="Character Movement (General Settings)", VisibleInstanceOnly, BlueprintReadOnly)
+	uint8 bWantsToProne :1;
+
+	UPROPERTY(Category="Character Movement (General Settings)", VisibleInstanceOnly, BlueprintReadWrite, AdvancedDisplay)
+	uint8 bProneMaintainsBaseLocation:1;
+
+public:
+	virtual void Prone(bool bClientSimulation = false);
+	
+	virtual void UnProne(bool bClientSimulation = false);
+
+	virtual bool CanProneInCurrentState() const;
+
+	UFUNCTION(BlueprintSetter)
+	void SetPronedHalfHeight(const float NewValue);
+
+	UFUNCTION(BlueprintGetter)
+	float GetPronedHalfHeight() const;
+
+public:
+	virtual bool IsProning() const;
 };
 
 inline const FAlsMovementGaitSettings& UAlsCharacterMovementComponent::GetGaitSettings() const

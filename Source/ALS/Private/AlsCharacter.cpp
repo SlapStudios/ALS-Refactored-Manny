@@ -53,6 +53,8 @@ AAlsCharacter::AAlsCharacter(const FObjectInitializer& ObjectInitializer) : Supe
 
 	AlsCharacterMovement = Cast<UAlsCharacterMovementComponent>(GetCharacterMovement());
 
+	RecalculatePronedEyeHeight();
+
 	// This will prevent the editor from combining component details with actor details.
 	// Component details can still be accessed from the actor's component hierarchy.
 
@@ -67,9 +69,9 @@ AAlsCharacter::AAlsCharacter(const FObjectInitializer& ObjectInitializer) : Supe
 bool AAlsCharacter::CanEditChange(const FProperty* Property) const
 {
 	return Super::CanEditChange(Property) &&
-	       Property->GetFName() != GET_MEMBER_NAME_STRING_VIEW_CHECKED(ThisClass, bUseControllerRotationPitch) &&
-	       Property->GetFName() != GET_MEMBER_NAME_STRING_VIEW_CHECKED(ThisClass, bUseControllerRotationYaw) &&
-	       Property->GetFName() != GET_MEMBER_NAME_STRING_VIEW_CHECKED(ThisClass, bUseControllerRotationRoll);
+	       Property->GetFName() != GET_MEMBER_NAME_STRING_VIEW_CHECKED(AAlsCharacter, bUseControllerRotationPitch) &&
+	       Property->GetFName() != GET_MEMBER_NAME_STRING_VIEW_CHECKED(AAlsCharacter, bUseControllerRotationYaw) &&
+	       Property->GetFName() != GET_MEMBER_NAME_STRING_VIEW_CHECKED(AAlsCharacter, bUseControllerRotationRoll);
 }
 #endif
 
@@ -81,17 +83,19 @@ void AAlsCharacter::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLif
 	Parameters.bIsPushBased = true;
 
 	Parameters.Condition = COND_SkipOwner;
-	DOREPLIFETIME_WITH_PARAMS_FAST(ThisClass, DesiredStance, Parameters)
-	DOREPLIFETIME_WITH_PARAMS_FAST(ThisClass, DesiredGait, Parameters)
-	DOREPLIFETIME_WITH_PARAMS_FAST(ThisClass, bDesiredAiming, Parameters)
-	DOREPLIFETIME_WITH_PARAMS_FAST(ThisClass, DesiredRotationMode, Parameters)
-	DOREPLIFETIME_WITH_PARAMS_FAST(ThisClass, ViewMode, Parameters)
-	DOREPLIFETIME_WITH_PARAMS_FAST(ThisClass, OverlayMode, Parameters)
+	DOREPLIFETIME_WITH_PARAMS_FAST(AAlsCharacter, DesiredStance, Parameters);
+	DOREPLIFETIME_WITH_PARAMS_FAST(AAlsCharacter, DesiredGait, Parameters);
+	DOREPLIFETIME_WITH_PARAMS_FAST(AAlsCharacter, bDesiredAiming, Parameters);
+	DOREPLIFETIME_WITH_PARAMS_FAST(AAlsCharacter, DesiredRotationMode, Parameters);
+	DOREPLIFETIME_WITH_PARAMS_FAST(AAlsCharacter, ViewMode, Parameters);
+	DOREPLIFETIME_WITH_PARAMS_FAST(AAlsCharacter, OverlayMode, Parameters);
 
-	DOREPLIFETIME_WITH_PARAMS_FAST(ThisClass, ReplicatedViewRotation, Parameters)
-	DOREPLIFETIME_WITH_PARAMS_FAST(ThisClass, InputDirection, Parameters)
-	DOREPLIFETIME_WITH_PARAMS_FAST(ThisClass, DesiredVelocityYawAngle, Parameters)
-	DOREPLIFETIME_WITH_PARAMS_FAST(ThisClass, RagdollTargetLocation, Parameters)
+	DOREPLIFETIME_WITH_PARAMS_FAST(AAlsCharacter, ReplicatedViewRotation, Parameters);
+	DOREPLIFETIME_WITH_PARAMS_FAST(AAlsCharacter, InputDirection, Parameters);
+	DOREPLIFETIME_WITH_PARAMS_FAST(AAlsCharacter, DesiredVelocityYawAngle, Parameters);
+	DOREPLIFETIME_WITH_PARAMS_FAST(AAlsCharacter, RagdollTargetLocation, Parameters);
+
+	DOREPLIFETIME_CONDITION(AAlsCharacter, bIsProned, COND_SimulatedOnly);
 }
 
 void AAlsCharacter::PreRegisterAllComponents()
@@ -133,7 +137,7 @@ void AAlsCharacter::PostInitializeComponents()
 
 	GetMesh()->AddTickPrerequisiteActor(this);
 
-	AlsCharacterMovement->OnPhysicsRotation.AddUObject(this, &ThisClass::CharacterMovement_OnPhysicsRotation);
+	AlsCharacterMovement->OnPhysicsRotation.AddUObject(this, &AAlsCharacter::CharacterMovement_OnPhysicsRotation);
 
 	// Pass current movement settings to the movement component.
 
@@ -196,6 +200,11 @@ void AAlsCharacter::CalcCamera(const float DeltaTime, FMinimalViewInfo& ViewInfo
 	{
 		Super::CalcCamera(DeltaTime, ViewInfo);
 	}
+}
+
+bool AAlsCharacter::CanJumpInternal_Implementation() const
+{
+	return Super::CanJumpInternal_Implementation() && !IsProned();
 }
 
 void AAlsCharacter::PostNetReceiveLocationAndRotation()
@@ -273,6 +282,40 @@ void AAlsCharacter::OnRep_ReplicatedBasedMovement()
 	}
 }
 
+void AAlsCharacter::OnRep_IsCrouched()
+{
+	const bool bRepCrouched = IsCrouched();
+	const bool bRepProned = IsProned();
+
+	// Always clear states first.
+	if (AlsCharacterMovement)
+	{
+		AlsCharacterMovement->bWantsToCrouch = false;
+		AlsCharacterMovement->UnCrouch(true);
+		AlsCharacterMovement->bNetworkUpdateReceived = true;
+	}
+	if (AlsCharacterMovement)
+	{
+		AlsCharacterMovement->bWantsToProne = false;
+		AlsCharacterMovement->UnProne(true);
+		AlsCharacterMovement->bNetworkUpdateReceived = true;
+	}
+
+	// Enter replicated state after clearing. Prone takes precedence if both are true.
+	if (AlsCharacterMovement && bRepProned)
+	{
+		AlsCharacterMovement->bWantsToProne = true;
+		AlsCharacterMovement->Prone(true);
+		AlsCharacterMovement->bNetworkUpdateReceived = true;
+	}
+	else if (AlsCharacterMovement && bRepCrouched)
+	{
+		AlsCharacterMovement->bWantsToCrouch = true;
+		AlsCharacterMovement->Crouch(true);
+		AlsCharacterMovement->bNetworkUpdateReceived = true;
+	}
+}
+
 void AAlsCharacter::Tick(const float DeltaTime)
 {
 	DECLARE_SCOPE_CYCLE_COUNTER(TEXT("AAlsCharacter::Tick"), STAT_AAlsCharacter_Tick, STATGROUP_Als)
@@ -326,7 +369,28 @@ void AAlsCharacter::Restart()
 {
 	Super::Restart();
 
+	UnProne(true);
+
 	ApplyDesiredStance();
+}
+
+void AAlsCharacter::RecalculateBaseEyeHeight()
+{
+	if (!IsProned())
+	{
+		Super::RecalculateBaseEyeHeight();
+	}
+	else
+	{
+		BaseEyeHeight = PronedEyeHeight;
+	}
+}
+
+void AAlsCharacter::GetDefaultCapsuleHalfHeights(float& OutBaseHeight, float& OutCrouchedHeight, float& OutPronedHeight) const
+{
+	OutBaseHeight = GetDefaultHalfHeight();
+	OutCrouchedHeight = CrouchedEyeHeight;
+	OutPronedHeight = CrouchedEyeHeight / 2.0f; // #TODO: Improve
 }
 
 bool AAlsCharacter::OnCalculateCamera_Implementation(float DeltaTime, FMinimalViewInfo& ViewInfo)
@@ -347,7 +411,7 @@ void AAlsCharacter::RefreshMeshProperties() const
 	// Make sure that the pose is always ticked on the server when the character is controlled
 	// by a remote client, otherwise some problems may arise (such as jitter when rolling).
 
-	const auto DefaultTickOption{GetClass()->GetDefaultObject<ThisClass>()->GetMesh()->VisibilityBasedAnimTickOption};
+	const auto DefaultTickOption{GetClass()->GetDefaultObject<AAlsCharacter>()->GetMesh()->VisibilityBasedAnimTickOption};
 
 	const auto TargetTickOption{
 		!bStandalone && bAuthority && bRemoteAutonomousProxy
@@ -451,7 +515,7 @@ void AAlsCharacter::SetViewMode(const FGameplayTag& NewViewMode, const bool bSen
 
 	ViewMode = NewViewMode;
 
-	MARK_PROPERTY_DIRTY_FROM_NAME(ThisClass, ViewMode, this)
+	MARK_PROPERTY_DIRTY_FROM_NAME(AAlsCharacter, ViewMode, this)
 
 	if (bSendRpc)
 	{
@@ -584,7 +648,7 @@ void AAlsCharacter::SetDesiredAiming(const bool bNewDesiredAiming, const bool bS
 
 	bDesiredAiming = bNewDesiredAiming;
 
-	MARK_PROPERTY_DIRTY_FROM_NAME(ThisClass, bDesiredAiming, this)
+	MARK_PROPERTY_DIRTY_FROM_NAME(AAlsCharacter, bDesiredAiming, this)
 
 	OnDesiredAimingChanged(!bDesiredAiming);
 
@@ -632,7 +696,7 @@ void AAlsCharacter::SetDesiredRotationMode(const FGameplayTag& NewDesiredRotatio
 
 	DesiredRotationMode = NewDesiredRotationMode;
 
-	MARK_PROPERTY_DIRTY_FROM_NAME(ThisClass, DesiredRotationMode, this)
+	MARK_PROPERTY_DIRTY_FROM_NAME(AAlsCharacter, DesiredRotationMode, this)
 
 	if (bSendRpc)
 	{
@@ -780,7 +844,7 @@ void AAlsCharacter::SetDesiredStance(const FGameplayTag& NewDesiredStance, const
 
 	DesiredStance = NewDesiredStance;
 
-	MARK_PROPERTY_DIRTY_FROM_NAME(ThisClass, DesiredStance, this)
+	MARK_PROPERTY_DIRTY_FROM_NAME(AAlsCharacter, DesiredStance, this)
 
 	if (bSendRpc)
 	{
@@ -815,20 +879,57 @@ void AAlsCharacter::ApplyDesiredStance()
 		{
 			if (DesiredStance == AlsStanceTags::Standing)
 			{
-				UnCrouch();
+				if (IsCrouched())
+				{
+					UnCrouch();
+				}
+
+				if (IsProned())
+				{
+					UnProne();
+				}
 			}
 			else if (DesiredStance == AlsStanceTags::Crouching)
 			{
+				if (IsProned())
+				{
+					UnProne();
+				}
+
 				Crouch();
+			}
+			else if (DesiredStance == AlsStanceTags::Proning)
+			{
+				if (IsCrouched())
+				{
+					UnCrouch();
+				}
+
+				Prone();
 			}
 		}
 		else if (LocomotionMode == AlsLocomotionModeTags::InAir)
 		{
-			UnCrouch();
+#if 0
+			if (IsCrouched())
+			{
+				UnCrouch();
+			}
+
+			if (IsProned())
+			{
+				UnProne();
+			}
+#endif
 		}
 	}
 	else if (LocomotionAction == AlsLocomotionActionTags::Rolling && Settings->Rolling.bCrouchOnStart)
 	{
+		if (IsProned())
+		{
+			UnProne();
+		}
+
 		Crouch();
 	}
 }
@@ -836,6 +937,7 @@ void AAlsCharacter::ApplyDesiredStance()
 bool AAlsCharacter::CanCrouch() const
 {
 	// This allows the ACharacter::Crouch() function to execute properly when bIsCrouched is true.
+	// TODO Wait for https://github.com/EpicGames/UnrealEngine/pull/9558 to be merged into the engine.
 
 	return bIsCrouched || Super::CanCrouch();
 }
@@ -893,6 +995,11 @@ void AAlsCharacter::SetStance(const FGameplayTag& NewStance)
 	}
 }
 
+void AAlsCharacter::MulticastSetStance_Implementation(const FGameplayTag& NewStance)
+{
+	SetStance(NewStance);
+}
+
 void AAlsCharacter::OnStanceChanged_Implementation(const FGameplayTag& PreviousStance) {}
 
 void AAlsCharacter::SetDesiredGait(const FGameplayTag& NewDesiredGait)
@@ -909,7 +1016,7 @@ void AAlsCharacter::SetDesiredGait(const FGameplayTag& NewDesiredGait, const boo
 
 	DesiredGait = NewDesiredGait;
 
-	MARK_PROPERTY_DIRTY_FROM_NAME(ThisClass, DesiredGait, this)
+	MARK_PROPERTY_DIRTY_FROM_NAME(AAlsCharacter, DesiredGait, this)
 
 	if (bSendRpc)
 	{
@@ -1051,7 +1158,7 @@ void AAlsCharacter::SetOverlayMode(const FGameplayTag& NewOverlayMode, const boo
 
 	OverlayMode = NewOverlayMode;
 
-	MARK_PROPERTY_DIRTY_FROM_NAME(ThisClass, OverlayMode, this)
+	MARK_PROPERTY_DIRTY_FROM_NAME(AAlsCharacter, OverlayMode, this)
 
 	OnOverlayModeChanged(PreviousOverlayMode);
 
@@ -1099,6 +1206,11 @@ void AAlsCharacter::SetLocomotionAction(const FGameplayTag& NewLocomotionAction)
 
 void AAlsCharacter::NotifyLocomotionActionChanged(const FGameplayTag& PreviousLocomotionAction)
 {
+	if (LocomotionAction == AlsLocomotionActionTags::ProningTransition/* && GetViewMode() == AlsViewModeTags::ThirdPerson*/)
+	{
+		AlsCharacterMovement->SetInputBlocked(true);
+	}
+
 	if (!LocomotionAction.IsValid())
 	{
 		AlsCharacterMovement->SetInputBlocked(false);
@@ -1109,6 +1221,8 @@ void AAlsCharacter::NotifyLocomotionActionChanged(const FGameplayTag& PreviousLo
 	OnLocomotionActionChanged(PreviousLocomotionAction);
 }
 
+void AAlsCharacter::OnLocomotionActionChanged_Implementation(const FGameplayTag& PreviousLocomotionAction) {}
+
 FRotator AAlsCharacter::GetViewRotation() const
 {
 	return ViewState.Rotation;
@@ -1118,7 +1232,7 @@ void AAlsCharacter::SetInputDirection(FVector NewInputDirection)
 {
 	NewInputDirection = NewInputDirection.GetSafeNormal();
 
-	COMPARE_ASSIGN_AND_MARK_PROPERTY_DIRTY(ThisClass, InputDirection, NewInputDirection, this)
+	COMPARE_ASSIGN_AND_MARK_PROPERTY_DIRTY(AAlsCharacter, InputDirection, NewInputDirection, this)
 }
 
 void AAlsCharacter::RefreshInput(const float DeltaTime)
@@ -1142,7 +1256,7 @@ void AAlsCharacter::SetReplicatedViewRotation(const FRotator& NewViewRotation, c
 	{
 		ReplicatedViewRotation = NewViewRotation;
 
-		MARK_PROPERTY_DIRTY_FROM_NAME(ThisClass, ReplicatedViewRotation, this)
+		MARK_PROPERTY_DIRTY_FROM_NAME(AAlsCharacter, ReplicatedViewRotation, this)
 
 		if (bSendRpc && GetLocalRole() == ROLE_AutonomousProxy)
 		{
@@ -1220,6 +1334,11 @@ void AAlsCharacter::CorrectViewNetworkSmoothing(const FRotator& NewTargetRotatio
 	// Compute actual delta between new server time and client simulation.
 
 	NetworkSmoothing.Duration = NetworkSmoothing.ServerTime - NetworkSmoothing.ClientTime;
+}
+
+const FRotator& AAlsCharacter::GetReplicatedViewRotation() const
+{
+	return ReplicatedViewRotation;
 }
 
 void AAlsCharacter::RefreshView(const float DeltaTime)
@@ -1331,7 +1450,7 @@ void AAlsCharacter::RefreshViewNetworkSmoothing(const float DeltaTime)
 
 void AAlsCharacter::SetDesiredVelocityYawAngle(const float NewVelocityYawAngle)
 {
-	COMPARE_ASSIGN_AND_MARK_PROPERTY_DIRTY(ThisClass, DesiredVelocityYawAngle, NewVelocityYawAngle, this)
+	COMPARE_ASSIGN_AND_MARK_PROPERTY_DIRTY(AAlsCharacter, DesiredVelocityYawAngle, NewVelocityYawAngle, this)
 }
 
 void AAlsCharacter::RefreshLocomotionEarly()
@@ -1440,7 +1559,7 @@ void AAlsCharacter::RefreshLocomotion()
 
 void AAlsCharacter::RefreshLocomotionLate()
 {
-	if (!LocomotionMode.IsValid() || LocomotionAction.IsValid())
+	if (!LocomotionMode.IsValid() || (LocomotionAction.IsValid() && GetViewMode() == AlsViewModeTags::ThirdPerson))
 	{
 		RefreshTargetYawAngleUsingActorRotation();
 	}
@@ -1515,7 +1634,7 @@ void AAlsCharacter::CharacterMovement_OnPhysicsRotation(const float DeltaTime)
 
 void AAlsCharacter::RefreshGroundedRotation(const float DeltaTime)
 {
-	if (LocomotionAction.IsValid() || LocomotionMode != AlsLocomotionModeTags::Grounded)
+	if ((LocomotionAction.IsValid() && GetViewMode() == AlsViewModeTags::ThirdPerson) || LocomotionMode != AlsLocomotionModeTags::Grounded)
 	{
 		return;
 	}
@@ -1746,16 +1865,9 @@ bool AAlsCharacter::ConstrainAimingRotation(FRotator& ActorRotation, const float
 		};
 
 		const auto DeltaAngle{FMath::UnwindDegrees(TargetViewRelativeAngle - ViewRelativeAngle)};
+		const auto InterpolationAmount{UAlsMath::DamperExactAlpha(DeltaTime, RotationInterpolationHalfLife)};
 
-		if (FMath::IsNearlyZero(DeltaAngle, UE_KINDA_SMALL_NUMBER))
-		{
-			ViewRelativeAngle = TargetViewRelativeAngle;
-		}
-		else
-		{
-			const auto InterpolationAmount{UAlsMath::DamperExactAlpha(DeltaTime, RotationInterpolationHalfLife)};
-			ViewRelativeAngle = FMath::UnwindDegrees(ViewRelativeAngle + DeltaAngle * InterpolationAmount);
-		}
+		ViewRelativeAngle = FMath::UnwindDegrees(ViewRelativeAngle + DeltaAngle * InterpolationAmount);
 	}
 
 	// Primary constraint. Prevents the actor from rotating beyond a certain angle relative to the camera.
@@ -1775,9 +1887,9 @@ bool AAlsCharacter::ConstrainAimingRotation(FRotator& ActorRotation, const float
 
 	// We use UE_KINDA_SMALL_NUMBER here because even if ViewRelativeAngle hasn't
 	// changed, converting it back to ActorRotation.Yaw may introduce a rounding
-	// error, and FMath::IsNearlyZero() with default arguments will return false.
+	// error, and FMath::IsNearlyEqual() with default arguments will return false.
 
-	return !FMath::IsNearlyZero(FMath::UnwindDegrees(ActorRotation.Yaw - PreviousActorYawAngle), UE_KINDA_SMALL_NUMBER);
+	return !FMath::IsNearlyEqual(PreviousActorYawAngle, ActorRotation.Yaw, UE_KINDA_SMALL_NUMBER);
 }
 
 float AAlsCharacter::CalculateGroundedMovingRotationInterpolationHalfLife() const
@@ -1819,7 +1931,7 @@ void AAlsCharacter::ApplyRotationYawSpeedAnimationCurve(const float DeltaTime)
 
 void AAlsCharacter::RefreshInAirRotation(const float DeltaTime)
 {
-	if (LocomotionAction.IsValid() || LocomotionMode != AlsLocomotionModeTags::InAir)
+	if ((LocomotionAction.IsValid() && GetViewMode() == AlsViewModeTags::ThirdPerson) || LocomotionMode != AlsLocomotionModeTags::InAir)
 	{
 		return;
 	}
@@ -1949,4 +2061,158 @@ void AAlsCharacter::RefreshViewRelativeTargetYawAngle()
 {
 	LocomotionState.ViewRelativeTargetYawAngle = FMath::UnwindDegrees(UE_REAL_TO_FLOAT(
 		ViewState.Rotation.Yaw - LocomotionState.TargetYawAngle));
+}
+
+void AAlsCharacter::OnRep_IsProned()
+{
+	const bool bRepCrouched = IsCrouched();
+	const bool bRepProned = IsProned();
+
+	// Always clear states first.
+	if (AlsCharacterMovement)
+	{
+		AlsCharacterMovement->bWantsToCrouch = false;
+		AlsCharacterMovement->UnCrouch(true);
+		AlsCharacterMovement->bNetworkUpdateReceived = true;
+	}
+	if (AlsCharacterMovement)
+	{
+		AlsCharacterMovement->bWantsToProne = false;
+		AlsCharacterMovement->UnProne(true);
+		AlsCharacterMovement->bNetworkUpdateReceived = true;
+	}
+
+	// Enter replicated state after clearing. Prone takes precedence if both are true.
+	if (AlsCharacterMovement && bRepProned)
+	{
+		AlsCharacterMovement->bWantsToProne = true;
+		AlsCharacterMovement->Prone(true);
+		AlsCharacterMovement->bNetworkUpdateReceived = true;
+	}
+	else if (AlsCharacterMovement && bRepCrouched)
+	{
+		AlsCharacterMovement->bWantsToCrouch = true;
+		AlsCharacterMovement->Crouch(true);
+		AlsCharacterMovement->bNetworkUpdateReceived = true;
+	}
+}
+
+bool AAlsCharacter::IsProned() const
+{
+	return bIsProned;
+}
+
+void AAlsCharacter::SetIsProned(const bool bInIsProned)
+{
+	bIsProned = bInIsProned;
+}
+
+void AAlsCharacter::Prone(bool bClientSimulation /*= false*/)
+{
+	if (AlsCharacterMovement)
+	{
+		if (CanProne())
+		{
+			AlsCharacterMovement->bWantsToProne = true;
+		}
+#if !(UE_BUILD_SHIPPING || UE_BUILD_TEST)
+#if 0
+		else if (!AlsCharacterMovement->CanEverProne())
+		{
+			UE_LOG(LogCharacter, Log, TEXT("%s is trying to prone, but proning is disabled on this character! (check AlsCharacterMovement NavAgentSettings)"), *GetName());
+		}
+#endif
+#endif
+	}
+}
+
+void AAlsCharacter::UnProne(bool bClientSimulation /*= false*/)
+{
+	if (AlsCharacterMovement)
+	{
+		AlsCharacterMovement->bWantsToProne = false;
+	}
+}
+
+bool AAlsCharacter::CanProne() const
+{
+	return bIsProned
+		|| (!IsProned() && AlsCharacterMovement /*&& AlsCharacterMovement->CanEverProne()*/ && GetRootComponent() && !GetRootComponent()->IsSimulatingPhysics());
+}
+
+void AAlsCharacter::OnEndProne(float HeightAdjust, float ScaledHeightAdjust)
+{
+	auto* PredictionData{ GetCharacterMovement()->GetPredictionData_Client_Character() };
+
+	if (PredictionData != nullptr && GetLocalRole() <= ROLE_SimulatedProxy &&
+		ScaledHeightAdjust > 0.0f && IsPlayingNetworkedRootMotionMontage())
+	{
+		// Same fix as in AAlsCharacter::OnStartCrouch().
+
+		PredictionData->MeshTranslationOffset.Z -= ScaledHeightAdjust;
+		PredictionData->OriginalMeshTranslationOffset = PredictionData->MeshTranslationOffset;
+	}
+
+	RecalculateBaseEyeHeight();
+
+	const AAlsCharacter* DefaultChar = GetDefault<AAlsCharacter>(GetClass());
+	if (GetMesh() && DefaultChar->GetMesh())
+	{
+		FVector& MeshRelativeLocation = GetMesh()->GetRelativeLocation_DirectMutable();
+		MeshRelativeLocation.Z = DefaultChar->GetMesh()->GetRelativeLocation().Z;
+		BaseTranslationOffset.Z = MeshRelativeLocation.Z;
+	}
+	else
+	{
+		BaseTranslationOffset.Z = DefaultChar->BaseTranslationOffset.Z;
+	}
+
+	K2_OnEndProne(HeightAdjust, ScaledHeightAdjust);
+
+	SetStance(AlsStanceTags::Standing);
+}
+
+void AAlsCharacter::OnStartProne(float HeightAdjust, float ScaledHeightAdjust)
+{
+	auto* PredictionData{ GetCharacterMovement()->GetPredictionData_Client_Character() };
+
+	if (PredictionData != nullptr && GetLocalRole() <= ROLE_SimulatedProxy &&
+		ScaledHeightAdjust > 0.0f && IsPlayingNetworkedRootMotionMontage())
+	{
+		// The code below essentially undoes the changes that will be made later at the end of the
+		// UCharacterMovementComponent::Crouch() function because they literally break network smoothing when crouching
+		// while the root motion montage is playing, causing the  mesh to take an incorrect location for a while.
+		// TODO Wait for https://github.com/EpicGames/UnrealEngine/pull/10373 to be merged into the engine.
+
+		PredictionData->MeshTranslationOffset.Z += ScaledHeightAdjust;
+		PredictionData->OriginalMeshTranslationOffset = PredictionData->MeshTranslationOffset;
+	}
+
+	RecalculateBaseEyeHeight();
+
+	const AAlsCharacter* DefaultChar = GetDefault<AAlsCharacter>(GetClass());
+	if (GetMesh() && DefaultChar->GetMesh())
+	{
+		FVector& MeshRelativeLocation = GetMesh()->GetRelativeLocation_DirectMutable();
+		MeshRelativeLocation.Z = DefaultChar->GetMesh()->GetRelativeLocation().Z + HeightAdjust;
+		BaseTranslationOffset.Z = MeshRelativeLocation.Z;
+	}
+	else
+	{
+		BaseTranslationOffset.Z = DefaultChar->BaseTranslationOffset.Z + HeightAdjust;
+	}
+
+	K2_OnStartProne(HeightAdjust, ScaledHeightAdjust);
+
+	SetStance(AlsStanceTags::Proning);
+}
+
+void AAlsCharacter::RecalculatePronedEyeHeight()
+{
+	if (AlsCharacterMovement != nullptr)
+	{
+		constexpr float EyeHeightRatio = 0.8f;	// how high the character's eyes are, relative to the proned height
+
+		PronedEyeHeight = AlsCharacterMovement->GetPronedHalfHeight() * EyeHeightRatio;
+	}
 }

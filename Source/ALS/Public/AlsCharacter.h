@@ -47,11 +47,14 @@ protected:
 	FGameplayTag DesiredGait{AlsGaitTags::Running};
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Settings|Als Character|Desired State", Replicated)
-	FGameplayTag ViewMode{AlsViewModeTags::ThirdPerson};
+	FGameplayTag ViewMode{AlsViewModeTags::FirstPerson};
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Settings|Als Character|Desired State",
 		ReplicatedUsing = "OnReplicated_OverlayMode")
 	FGameplayTag OverlayMode{AlsOverlayModeTags::Default};
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Settings|Als Character")
+	uint8 bReplicateRagdoll : 1 {false};
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "State|Als Character", Transient, Meta = (ShowInnerProperties))
 	TWeakObjectPtr<UAlsAnimationInstance> AnimationInstance;
@@ -130,16 +133,25 @@ protected:
 
 	virtual void CalcCamera(float DeltaTime, FMinimalViewInfo& ViewInfo) override;
 
+	virtual bool CanJumpInternal_Implementation() const override;
+
 public:
 	virtual void PostNetReceiveLocationAndRotation() override;
 
 	virtual void OnRep_ReplicatedBasedMovement() override;
+
+	virtual void OnRep_IsCrouched() override;
 
 	virtual void Tick(float DeltaTime) override;
 
 	virtual void PossessedBy(AController* NewController) override;
 
 	virtual void Restart() override;
+
+	virtual void RecalculateBaseEyeHeight() override;
+
+	UFUNCTION(BlueprintPure, Category="Als Character")
+	virtual void GetDefaultCapsuleHalfHeights(float& OutBaseHeight, float& OutCrouchedHeight, float& OutPronedHeight) const;
 
 public:
 	const UAlsCharacterSettings* GetSettings() const;
@@ -156,7 +168,7 @@ private:
 	// View Mode
 
 public:
-	const FGameplayTag& GetViewMode() const;
+	virtual const FGameplayTag& GetViewMode() const;
 
 	UFUNCTION(BlueprintCallable, Category = "ALS|Character", Meta = (AutoCreateRefTerm = "NewViewMode"))
 	void SetViewMode(const FGameplayTag& NewViewMode);
@@ -240,7 +252,7 @@ protected:
 	UFUNCTION(BlueprintImplementableEvent, Category = "Als Character")
 	void OnRotationModeChanged(const FGameplayTag& PreviousRotationMode);
 
-	void RefreshRotationMode();
+	virtual void RefreshRotationMode();
 
 	// Desired Stance
 
@@ -276,6 +288,9 @@ public:
 
 protected:
 	void SetStance(const FGameplayTag& NewStance);
+	
+	UFUNCTION(NetMulticast, Reliable)
+	void MulticastSetStance(const FGameplayTag& NewStance);
 
 	UFUNCTION(BlueprintNativeEvent, Category = "Als Character")
 	void OnStanceChanged(const FGameplayTag& PreviousStance);
@@ -315,7 +330,8 @@ private:
 
 	FGameplayTag CalculateActualGait(const FGameplayTag& MaxAllowedGait) const;
 
-	bool CanSprint() const;
+protected:
+	virtual bool CanSprint() const;
 
 	// Overlay Mode
 
@@ -351,7 +367,7 @@ public:
 protected:
 	virtual void NotifyLocomotionActionChanged(const FGameplayTag& PreviousLocomotionAction);
 
-	UFUNCTION(BlueprintImplementableEvent, Category = "Als Character")
+	UFUNCTION(BlueprintNativeEvent, Category = "Als Character")
 	void OnLocomotionActionChanged(const FGameplayTag& PreviousLocomotionAction);
 
 	// Input
@@ -383,6 +399,8 @@ public:
 
 public:
 	const FAlsViewState& GetViewState() const;
+
+	const FRotator& GetReplicatedViewRotation() const;
 
 private:
 	void RefreshView(float DeltaTime);
@@ -420,12 +438,13 @@ private:
 	UFUNCTION(NetMulticast, Reliable)
 	void MulticastOnJumpedNetworked();
 
-	void OnJumpedNetworked();
+protected:
+	virtual void OnJumpedNetworked();
 
 	// Rotation
 
 public:
-	virtual void FaceRotation(FRotator Rotation, float DeltaTime) override final;
+	virtual void FaceRotation(FRotator Rotation, float DeltaTime) override;
 
 	void CharacterMovement_OnPhysicsRotation(float DeltaTime);
 
@@ -476,11 +495,12 @@ public:
 	UFUNCTION(BlueprintNativeEvent, Category = "Als Character")
 	UAnimMontage* SelectRollMontage();
 
-	bool IsRollingAllowedToStart(const UAnimMontage* Montage) const;
+	virtual bool IsRollingAllowedToStart(const UAnimMontage* Montage) const;
 
-private:
+protected:
 	void StartRolling(float PlayRate, float TargetYawAngle);
 
+private:
 	UFUNCTION(Server, Reliable)
 	void ServerStartRolling(UAnimMontage* Montage, float PlayRate, float InitialYawAngle, float TargetYawAngle);
 
@@ -550,6 +570,7 @@ private:
 	UFUNCTION(NetMulticast, Reliable)
 	void MulticastStartRagdolling();
 
+protected:
 	void StartRagdollingImplementation();
 
 protected:
@@ -589,6 +610,44 @@ private:
 	FVector RagdollTraceGround(bool& bGrounded) const;
 
 	void ConstraintRagdollSpeed() const;
+
+	// Prone
+public:
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=Camera)
+	float PronedEyeHeight;
+
+public:
+	UPROPERTY(BlueprintReadOnly, ReplicatedUsing=OnRep_IsProned, Category=Character)
+	uint8 bIsProned:1;
+
+	UFUNCTION()
+	virtual void OnRep_IsProned();
+
+public:
+	bool IsProned() const;
+	void SetIsProned(const bool bInIsProned);
+
+public:
+	UFUNCTION(BlueprintCallable, Category=Character, meta=(HidePin="bClientSimulation"))
+	virtual void Prone(bool bClientSimulation = false);
+
+	UFUNCTION(BlueprintCallable, Category=Character, meta=(HidePin="bClientSimulation"))
+	virtual void UnProne(bool bClientSimulation = false);
+
+	UFUNCTION(BlueprintCallable, Category=Character)
+	virtual bool CanProne() const;
+
+	virtual void OnEndProne(float HalfHeightAdjust, float ScaledHalfHeightAdjust);
+
+	UFUNCTION(BlueprintImplementableEvent, meta=(DisplayName="OnEndProne", ScriptName="OnEndProne"))
+	void K2_OnEndProne(float HalfHeightAdjust, float ScaledHalfHeightAdjust);
+
+	virtual void OnStartProne(float HalfHeightAdjust, float ScaledHalfHeightAdjust);
+
+	UFUNCTION(BlueprintImplementableEvent, meta=(DisplayName="OnStartProne", ScriptName="OnStartProne"))
+	void K2_OnStartProne(float HalfHeightAdjust, float ScaledHalfHeightAdjust);
+
+	void RecalculatePronedEyeHeight();
 
 	// Debug
 

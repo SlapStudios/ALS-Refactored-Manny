@@ -67,4 +67,16 @@ struct ALS_API FAlsGeneralTurnInPlaceSettings
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ALS", Instanced, DisplayName = "Crouching Turn 180 Right")
 	TObjectPtr<UAlsTurnInPlaceSettings> CrouchingTurn180Right;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ALS", Instanced, DisplayName = "Proning Turn 90 Left")
+	TObjectPtr<UAlsTurnInPlaceSettings> ProningTurn90Left;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ALS", Instanced, DisplayName = "Proning Turn 90 Right")
+	TObjectPtr<UAlsTurnInPlaceSettings> ProningTurn90Right;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ALS", Instanced, DisplayName = "Proning Turn 180 Left")
+	TObjectPtr<UAlsTurnInPlaceSettings> ProningTurn180Left;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ALS", Instanced, DisplayName = "Proning Turn 180 Right")
+	TObjectPtr<UAlsTurnInPlaceSettings> ProningTurn180Right;
 };

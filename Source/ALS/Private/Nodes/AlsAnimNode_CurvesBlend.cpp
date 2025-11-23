@@ -52,7 +52,9 @@ void FAlsAnimNode_CurvesBlend::Evaluate_AnyThread(FPoseContext& Output)
 
 	Super::Evaluate_AnyThread(Output);
 
+	FPoseContext SourcePoseContext{ Output };
 	SourcePose.Evaluate(Output);
+	SourcePose.Evaluate(SourcePoseContext);
 
 	const auto CurrentBlendAmount{GetBlendAmount()};
 	if (!FAnimWeight::IsRelevant(CurrentBlendAmount))
@@ -88,6 +90,22 @@ void FAlsAnimNode_CurvesBlend::Evaluate_AnyThread(FPoseContext& Output)
 		case EAlsCurvesBlendMode::Override:
 			Output.Curve.Override(CurvesPoseContext.Curve);
 			break;
+	}
+
+	for (const auto& CurveName : SourcePoseOverride)
+	{
+		Output.Curve.Set(CurveName, SourcePoseContext.Curve.Get(CurveName));
+	}
+
+	for (const auto& CurveName : CurvePoseOverride)
+	{
+		Output.Curve.Set(CurveName, CurvesPoseContext.Curve.Get(CurveName));
+	}
+
+	for (const auto& CurveName : CurveAddToSource)
+	{
+		const float Value = SourcePoseContext.Curve.Get(CurveName) + CurvesPoseContext.Curve.Get(CurveName);
+		Output.Curve.Set(CurveName, Value);
 	}
 }
 

@@ -202,7 +202,7 @@ class ALS_API UAlsAnimNotify_FootstepEffects : public UAnimNotify
 {
 	GENERATED_BODY()
 
-protected:
+public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Settings")
 	TObjectPtr<UAlsFootstepEffectsSettings> FootstepEffectsSettings;
 

@@ -29,6 +29,7 @@ protected:
 	inline static const FName TransitionSlot{TEXTVIEW("Transition")};
 	inline static const FName TurnInPlaceStandingSlot{TEXTVIEW("TurnInPlaceStanding")};
 	inline static const FName TurnInPlaceCrouchingSlot{TEXTVIEW("TurnInPlaceCrouching")};
+	inline static const FName TurnInPlaceProningSlot{TEXTVIEW("TurnInPlaceProning")};
 
 	// Layering Animation Curves
 
@@ -64,6 +65,7 @@ protected:
 	inline static const FName PoseMovingCurve{TEXTVIEW("PoseMoving")};
 	inline static const FName PoseStandingCurve{TEXTVIEW("PoseStanding")};
 	inline static const FName PoseCrouchingCurve{TEXTVIEW("PoseCrouching")};
+	inline static const FName PoseProningCurve{TEXTVIEW("PoseProning")};
 	inline static const FName PoseGroundedCurve{TEXTVIEW("PoseGrounded")};
 	inline static const FName PoseInAirCurve{TEXTVIEW("PoseInAir")};
 
@@ -142,6 +144,9 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "ALS|Constants|Animation Slots", Meta = (ReturnDisplayName = "Slot Name"))
 	static const FName& TurnInPlaceCrouchingSlotName();
+
+	UFUNCTION(BlueprintPure, Category = "ALS|Constants|Animation Slots", Meta = (ReturnDisplayName = "Slot Name"))
+	static const FName& TurnInPlaceProningSlotName();
 
 	// Layering Animation Curves
 
@@ -233,6 +238,9 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "ALS|Constants|Animation Curves", Meta = (ReturnDisplayName = "Curve Name"))
 	static const FName& PoseCrouchingCurveName();
+
+	UFUNCTION(BlueprintPure, Category = "ALS|Constants|Animation Curves", Meta = (ReturnDisplayName = "Curve Name"))
+	static const FName& PoseProningCurveName();
 
 	UFUNCTION(BlueprintPure, Category = "ALS|Constants|Animation Curves", Meta = (ReturnDisplayName = "Curve Name"))
 	static const FName& PoseGroundedCurveName();
@@ -371,6 +379,11 @@ inline const FName& UAlsConstants::TurnInPlaceStandingSlotName()
 inline const FName& UAlsConstants::TurnInPlaceCrouchingSlotName()
 {
 	return TurnInPlaceCrouchingSlot;
+}
+
+inline const FName& UAlsConstants::TurnInPlaceProningSlotName()
+{
+	return TurnInPlaceProningSlot;
 }
 
 inline const FName& UAlsConstants::LayerHeadCurveName()
@@ -516,6 +529,11 @@ inline const FName& UAlsConstants::PoseStandingCurveName()
 inline const FName& UAlsConstants::PoseCrouchingCurveName()
 {
 	return PoseCrouchingCurve;
+}
+
+inline const FName& UAlsConstants::PoseProningCurveName()
+{
+	return PoseProningCurve;
 }
 
 inline const FName& UAlsConstants::PoseGroundedCurveName()
