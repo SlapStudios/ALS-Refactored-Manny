@@ -34,22 +34,16 @@ The main goal of this ALS version is a complete and high-quality refactoring of 
 - Support of **Update Rate Optimization** (disabled by default) and **Large World Coordinates**.
 - A lot of other fixes, improvements and refactorings.
 
-For more information, see the [Releases](https://github.com/Sixze/ALS-Refactored/releases). Reading the changelogs is a good way to keep up to date with the newest features of a plugin.
+For more information, see the [Releases](https://github.com/SlapStudios/ALS-Refactored-Manny/releases). Reading the changelogs is a good way to keep up to date with the newest features of a plugin.
 
 </details>
 
 ## Supported Unreal Engine Versions & Platforms
 
-| Plugin Version                                                            | Unreal Engine Version           |
-|---------------------------------------------------------------------------|---------------------------------|
-| [4.16](https://github.com/Sixze/ALS-Refactored/releases/tag/4.16)         | 5.6                            |
-| [4.15](https://github.com/Sixze/ALS-Refactored/releases/tag/4.15)         | 5.5                             |
-| [4.14](https://github.com/Sixze/ALS-Refactored/releases/tag/4.14)         | 5.4                             |
-| [4.13](https://github.com/Sixze/ALS-Refactored/releases/tag/4.13)         | 5.3                             |
-| [4.12](https://github.com/Sixze/ALS-Refactored/releases/tag/4.12)         | 5.2                             |
-| [4.11](https://github.com/Sixze/ALS-Refactored/releases/tag/4.11)         | 5.1                             |
-| [4.10](https://github.com/Sixze/ALS-Refactored/releases/tag/4.10) - 4.9   | 5.0                             |
-| [4.8](https://github.com/Sixze/ALS-Refactored/releases/tag/4.8) and below | 4.26, 4.27 and 5.0 Early Access |
+| Plugin Version                                                                          | Unreal Engine Version           |
+|-----------------------------------------------------------------------------------------|---------------------------------|
+| [1.0.0](https://github.com/SlapStudios/ALS-Refactored-Manny/releases/tag/1.0.0)         | 5.7.x                           |
+| :x:                                                                                     | < 5.7                           |
 
 **The plugin is developed and tested primarily on Windows, so use it on other platforms at your own risk.**
 
@@ -60,8 +54,8 @@ For more information, see the [Releases](https://github.com/Sixze/ALS-Refactored
 
 ## Known Issues & Discussion
 
-- See the [Issues](https://github.com/Sixze/ALS-Refactored/issues) page for list of known issues.
-- See the [Discussions](https://github.com/Sixze/ALS-Refactored/discussions) page to discuss anything about the plugin and ask questions. Please do not open an issue for questions.
+- See the [Issues](https://github.com/SlapStudios/ALS-Refactored-Manny/issues) page for list of known issues.
+- See the [Discussions](https://github.com/SlapStudios/ALS-Refactored-Manny/discussions) page to discuss anything about the plugin and ask questions. Please do not open an issue for questions.
 
 ## License & Contribution
 
