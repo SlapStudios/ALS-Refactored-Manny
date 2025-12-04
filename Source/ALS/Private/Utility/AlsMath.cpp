@@ -58,3 +58,8 @@ bool UAlsMath::TryCalculatePoleVector(const FVector& ALocation, const FVector& B
 
 	return PoleDirection.Normalize(); // Direction will be zero and cannot be normalized if A, B and C are collinear.
 }
+
+FVector UAlsMath::GetNormalFromHitResult(const FHitResult& InHit)
+{
+	return InHit.Normal;
+}

@@ -3,6 +3,7 @@
 #include "Engine/DataAsset.h"
 #include "Engine/Scene.h"
 #include "Utility/AlsConstants.h"
+#include "GameplayTagContainer.h"
 #include "AlsCameraSettings.generated.h"
 
 USTRUCT(BlueprintType)

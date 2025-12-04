@@ -66,6 +66,8 @@ void FAlsSavedMove::Clear()
 	MaxAllowedGait = AlsGaitTags::Running;
 
 	bWantsToProne = false;
+
+	Saved_bPrevWantsToCrouch = false;
 }
 
 void FAlsSavedMove::SetMoveFor(ACharacter* Character, const float NewDeltaTime, const FVector& NewAcceleration,
@@ -81,6 +83,8 @@ void FAlsSavedMove::SetMoveFor(ACharacter* Character, const float NewDeltaTime, 
 		MaxAllowedGait = Movement->MaxAllowedGait;
 
 		bWantsToProne = Movement->bWantsToProne;
+
+		Saved_bPrevWantsToCrouch = Movement->Safe_bPrevWantsToCrouch;
 	}
 }
 
@@ -129,6 +133,8 @@ void FAlsSavedMove::PrepMoveFor(ACharacter* Character)
 		Movement->MaxAllowedGait = MaxAllowedGait;
 
 		Movement->RefreshGaitSettings();
+
+		Movement->Safe_bPrevWantsToCrouch = Saved_bPrevWantsToCrouch;
 	}
 }
 
@@ -277,11 +283,33 @@ void UAlsCharacterMovementComponent::OnMovementModeChanged(const EMovementMode P
 
 	Super::OnMovementModeChanged(PreviousMovementMode, PreviousCustomMode);
 
+	if (PreviousMovementMode == MOVE_Custom && PreviousCustomMode == CMOVE_Slide)
+	{
+		ExitSlide();
+	}
+
+	if (IsCustomMovementMode(CMOVE_Slide))
+	{
+		EnterSlide(PreviousMovementMode, (ECustomMovementMode)PreviousCustomMode);
+	}
+
 	// This removes some very noticeable changes in the mesh location when the
 	// character automatically uncrouches at the end of the roll in the air.
 
 	bCrouchMaintainsBaseLocation = true;
 	bProneMaintainsBaseLocation = true;
+}
+
+void UAlsCharacterMovementComponent::OnMovementUpdated(float DeltaTime, const FVector& OldLocation, const FVector& OldVelocity)
+{
+	Super::OnMovementUpdated(DeltaTime, OldLocation, OldVelocity);
+
+	Safe_bPrevWantsToCrouch = bWantsToCrouch;
+}
+
+bool UAlsCharacterMovementComponent::IsMovingOnGround() const
+{
+	return Super::IsMovingOnGround() || IsCustomMovementMode(CMOVE_Slide);
 }
 
 bool UAlsCharacterMovementComponent::ShouldPerformAirControlForPathFollowing() const
@@ -347,6 +375,11 @@ float UAlsCharacterMovementComponent::GetMaxSpeed() const
 	case MOVE_Swimming:
 	case MOVE_Flying:
 	case MOVE_Custom:
+		switch (CustomMovementMode)
+		{
+		case CMOVE_Slide:
+			return MaxSlideSpeed;
+		}
 	case MOVE_None:
 	default:
 		return Super::GetMaxSpeed();
@@ -363,6 +396,19 @@ float UAlsCharacterMovementComponent::GetMaxAcceleration() const
 	return Super::GetMaxAcceleration();
 }
 
+float UAlsCharacterMovementComponent::GetMaxBrakingDeceleration() const
+{
+	if (MovementMode != MOVE_Custom) return Super::GetMaxBrakingDeceleration();
+
+	switch (CustomMovementMode)
+	{
+	case CMOVE_Slide:
+		return BrakingDecelerationSliding;
+	default:
+		return Super::GetMaxBrakingDeceleration();
+	}
+}
+
 bool UAlsCharacterMovementComponent::CanAttemptJump() const
 {
 	return Super::CanAttemptJump() && !bWantsToProne;
@@ -370,43 +416,53 @@ bool UAlsCharacterMovementComponent::CanAttemptJump() const
 
 void UAlsCharacterMovementComponent::UpdateCharacterStateBeforeMovement(float DeltaSeconds)
 {
-	if (CharacterOwner->GetLocalRole() == ROLE_SimulatedProxy)
+	if (MovementMode == MOVE_Walking && IsSlideTriggered())
 	{
-		return;
+		if (CanSlide(false) && GaitAmount >= MinSlideGaitAmount)
+		{
+			SetMovementMode(MOVE_Custom, CMOVE_Slide);
+		}
+	}
+	else if (IsCustomMovementMode(CMOVE_Slide) && !bWantsToCrouch)
+	{
+		SetMovementMode(MOVE_Walking);
 	}
 
-	// Cache input intents for this tick.
-	const bool bRequestCrouch = bWantsToCrouch;
-	const bool bRequestProne = bWantsToProne;
+	if (CharacterOwner->GetLocalRole() != ROLE_SimulatedProxy)
+	{
+		// Cache input intents for this tick.
+		const bool bRequestCrouch = bWantsToCrouch;
+		const bool bRequestProne = bWantsToProne;
 
-	// 1) Exit invalid or undesired states first.
-	if (IsCrouching() && (!bRequestCrouch || !CanCrouchInCurrentState()))
-	{
-		UnCrouch(false);
-	}
-	if (IsProning() && (!bRequestProne || !CanProneInCurrentState()))
-	{
-		UnProne(false);
-	}
+		// 1) Exit invalid or undesired states first.
+		if (IsCrouching() && (!bRequestCrouch || !CanCrouchInCurrentState()))
+		{
+			UnCrouch(false);
+		}
+		if (IsProning() && (!bRequestProne || !CanProneInCurrentState()))
+		{
+			UnProne(false);
+		}
 
-	// 2) Enforce mutual exclusivity: leave the opposite state before entering the new one.
-	if (bRequestProne && IsCrouching())
-	{
-		UnCrouch(false);
-	}
-	if (bRequestCrouch && IsProning())
-	{
-		UnProne(false);
-	}
+		// 2) Enforce mutual exclusivity: leave the opposite state before entering the new one.
+		if (bRequestProne && IsCrouching())
+		{
+			UnCrouch(false);
+		}
+		if (bRequestCrouch && IsProning())
+		{
+			UnProne(false);
+		}
 
-	// 3) Enter desired state. Prone has precedence if both are requested.
-	if (bRequestProne && !IsProning() && CanProneInCurrentState())
-	{
-		Prone(false);
-	}
-	else if (bRequestCrouch && !IsCrouching() && CanCrouchInCurrentState())
-	{
-		Crouch(false);
+		// 3) Enter desired state. Prone has precedence if both are requested.
+		if (bRequestProne && !IsProning() && CanProneInCurrentState())
+		{
+			Prone(false);
+		}
+		else if (bRequestCrouch && !IsCrouching() && CanCrouchInCurrentState())
+		{
+			Crouch(false);
+		}
 	}
 }
 
@@ -768,6 +824,15 @@ void UAlsCharacterMovementComponent::PhysCustom(const float DeltaTime, int32 Ite
 		return;
 	}
 
+	Super::PhysCustom(DeltaTime, IterationsCount);
+
+	switch (CustomMovementMode)
+	{
+	case CMOVE_Slide:
+		PhysSlide(DeltaTime, IterationsCount);
+		return;
+	}
+
 	IterationsCount += 1;
 	bJustTeleported = false;
 
@@ -781,8 +846,6 @@ void UAlsCharacterMovementComponent::PhysCustom(const float DeltaTime, int32 Ite
 	ApplyRootMotionToVelocity(DeltaTime);
 
 	MoveUpdatedComponent(Velocity * DeltaTime, UpdatedComponent->GetComponentQuat(), false);
-
-	Super::PhysCustom(DeltaTime, IterationsCount);
 }
 
 bool UAlsCharacterMovementComponent::ClientUpdatePositionAfterServerUpdate()
@@ -1174,6 +1237,11 @@ void UAlsCharacterMovementComponent::SetMovementSettings(UAlsMovementSettings* N
 	MovementSettings = NewMovementSettings;
 
 	RefreshGaitSettings();
+}
+
+bool UAlsCharacterMovementComponent::IsCustomMovementMode(ECustomMovementMode InCustomMovementMode) const
+{
+	return MovementMode == MOVE_Custom && CustomMovementMode == InCustomMovementMode;
 }
 
 void UAlsCharacterMovementComponent::RefreshGaitSettings()
@@ -1607,4 +1675,279 @@ bool UAlsCharacterMovementComponent::IsProning() const
 	}
 
 	return false;
+}
+
+bool UAlsCharacterMovementComponent::IsSlideTriggered() const
+{
+	if (SlideTriggerType == ESlideTriggerType::ESTT_DoubleTap)
+	{
+		return !bWantsToCrouch && Safe_bPrevWantsToCrouch;
+	}
+
+	if (SlideTriggerType == ESlideTriggerType::ESTT_SingleTap)
+	{
+		return bWantsToCrouch && !Safe_bPrevWantsToCrouch;
+	}
+
+	return false;
+}
+
+void UAlsCharacterMovementComponent::EnterSlide(EMovementMode PrevMode, ECustomMovementMode PrevCustomMode)
+{
+	bWantsToCrouch = true;
+	//bOrientRotationToMovement = false;
+	
+	Velocity += Velocity.GetSafeNormal2D() * SlideEnterImpulse;
+
+	FindFloor(UpdatedComponent->GetComponentLocation(), CurrentFloor, true, NULL);
+}
+
+void UAlsCharacterMovementComponent::ExitSlide()
+{
+	bWantsToCrouch = false;
+	// bOrientRotationToMovement = true;
+}
+
+bool UAlsCharacterMovementComponent::CanSlide(bool bCheckSpeed /*= true*/) const
+{
+	const FVector& Start = UpdatedComponent->GetComponentLocation();
+	const FVector End = Start + CharacterOwner->GetCapsuleComponent()->GetScaledCapsuleHalfHeight() * 2.5f * FVector::DownVector;
+
+	FCollisionQueryParams QueryParameters(__FUNCTION__, false, CharacterOwner);
+
+	bool bValidSurface = GetWorld()->LineTraceTestByProfile(Start, End, TEXT("BlockAll"), QueryParameters);
+	bool bEnoughSpeed = !bCheckSpeed || Velocity.SizeSquared() > pow(MinSlideSpeed, 2);
+
+	return bValidSurface && bEnoughSpeed;
+}
+
+void UAlsCharacterMovementComponent::PhysSlide(float deltaTime, int32 Iterations)
+{
+	if (deltaTime < MIN_TICK_TIME)
+	{
+		return;
+	}
+
+
+	if (!CanSlide())
+	{
+		SetMovementMode(MOVE_Walking);
+		StartNewPhysics(deltaTime, Iterations);
+		return;
+	}
+
+	bJustTeleported = false;
+	bool bCheckedFall = false;
+	bool bTriedLedgeMove = false;
+	float remainingTime = deltaTime;
+
+	// Perform the move
+	while ((remainingTime >= MIN_TICK_TIME) && (Iterations < MaxSimulationIterations) && CharacterOwner && (CharacterOwner->Controller || bRunPhysicsWithNoController || (CharacterOwner->GetLocalRole() == ROLE_SimulatedProxy)))
+	{
+		Iterations++;
+		bJustTeleported = false;
+		const float timeTick = GetSimulationTimeStep(remainingTime, Iterations);
+		remainingTime -= timeTick;
+
+		// Save current values
+		UPrimitiveComponent* const OldBase = GetMovementBase();
+		const FVector PreviousBaseLocation = (OldBase != NULL) ? OldBase->GetComponentLocation() : FVector::ZeroVector;
+		const FVector OldLocation = UpdatedComponent->GetComponentLocation();
+		const FFindFloorResult OldFloor = CurrentFloor;
+
+		// Ensure velocity is horizontal.
+		MaintainHorizontalGroundVelocity();
+		const FVector OldVelocity = Velocity;
+
+		FVector SlopeForce = CurrentFloor.HitResult.Normal;
+		SlopeForce.Z = 0.f;
+		Velocity += SlopeForce * SlideGravityForce * deltaTime;
+
+		// Handle player input during slide with customizable strength
+		if (!Acceleration.IsZero())
+		{
+			FVector InputAcceleration = FVector::ZeroVector;
+
+			// Calculate lateral (left/right) input influence
+			float LateralInput = FVector::DotProduct(Acceleration.GetSafeNormal2D(), UpdatedComponent->GetRightVector());
+			InputAcceleration += UpdatedComponent->GetRightVector() * LateralInput * SlideSteeringStrength;
+
+			// Optionally allow forward/backward input influence
+			if (bAllowForwardInputDuringSlide)
+			{
+				float ForwardInput = FVector::DotProduct(Acceleration.GetSafeNormal2D(), UpdatedComponent->GetForwardVector());
+				InputAcceleration += UpdatedComponent->GetForwardVector() * ForwardInput * SlideForwardInputStrength;
+			}
+
+			// Scale by the original acceleration magnitude and apply
+			Acceleration = InputAcceleration * Acceleration.Size();
+		}
+
+		// Apply acceleration
+		CalcVelocity(timeTick, GroundFriction * SlideFrictionFactor, false, GetMaxBrakingDeceleration());
+
+#if 0
+		// Clamp sliding speed to max
+		if (Velocity.Size2D() > MaxSlideSpeed)
+		{
+			Velocity = Velocity.GetSafeNormal2D() * MaxSlideSpeed + FVector(0, 0, Velocity.Z);
+		}
+#endif
+
+		// Compute move parameters
+		const FVector MoveVelocity = Velocity;
+		const FVector Delta = timeTick * MoveVelocity;
+		const bool bZeroDelta = Delta.IsNearlyZero();
+		FStepDownResult StepDownResult;
+		bool bFloorWalkable = CurrentFloor.IsWalkableFloor();
+
+		if (bZeroDelta)
+		{
+			remainingTime = 0.f;
+		}
+		else
+		{
+			// try to move forward
+			MoveAlongFloor(MoveVelocity, timeTick, &StepDownResult);
+
+			if (IsFalling())
+			{
+				// pawn decided to jump up
+				const float DesiredDist = Delta.Size();
+				if (DesiredDist > KINDA_SMALL_NUMBER)
+				{
+					const float ActualDist = (UpdatedComponent->GetComponentLocation() - OldLocation).Size2D();
+					remainingTime += timeTick * (1.f - FMath::Min(1.f, ActualDist / DesiredDist));
+				}
+				StartNewPhysics(remainingTime, Iterations);
+				return;
+			}
+			else if (IsSwimming()) //just entered water
+			{
+				StartSwimming(OldLocation, OldVelocity, timeTick, remainingTime, Iterations);
+				return;
+			}
+		}
+
+		// Update floor.
+		// StepUp might have already done it for us.
+		if (StepDownResult.bComputedFloor)
+		{
+			CurrentFloor = StepDownResult.FloorResult;
+		}
+		else
+		{
+			FindFloor(UpdatedComponent->GetComponentLocation(), CurrentFloor, bZeroDelta, NULL);
+		}
+
+
+		// check for ledges here
+		const bool bCheckLedges = !CanWalkOffLedges();
+		if (bCheckLedges && !CurrentFloor.IsWalkableFloor())
+		{
+			// calculate possible alternate movement
+			const FVector NewDelta = bTriedLedgeMove ? FVector::ZeroVector : GetLedgeMove(OldLocation, Delta, OldFloor);
+			if (!NewDelta.IsZero())
+			{
+				// first revert this move
+				RevertMove(OldLocation, OldBase, PreviousBaseLocation, OldFloor, false);
+
+				// avoid repeated ledge moves if the first one fails
+				bTriedLedgeMove = true;
+
+				// Try new movement direction
+				Velocity = NewDelta / timeTick;
+				remainingTime += timeTick;
+				continue;
+			}
+			else
+			{
+				// see if it is OK to jump
+				// @todo collision : only thing that can be problem is that oldbase has world collision on
+				bool bMustJump = bZeroDelta || (OldBase == NULL || (!OldBase->IsQueryCollisionEnabled() && MovementBaseUtility::IsDynamicBase(OldBase)));
+				if ((bMustJump || !bCheckedFall) && CheckFall(OldFloor, CurrentFloor.HitResult, Delta, OldLocation, remainingTime, timeTick, Iterations, bMustJump))
+				{
+					return;
+				}
+				bCheckedFall = true;
+
+				// revert this move
+				RevertMove(OldLocation, OldBase, PreviousBaseLocation, OldFloor, true);
+				remainingTime = 0.f;
+				break;
+			}
+		}
+		else
+		{
+			// Validate the floor check
+			if (CurrentFloor.IsWalkableFloor())
+			{
+				if (ShouldCatchAir(OldFloor, CurrentFloor))
+				{
+					HandleWalkingOffLedge(OldFloor.HitResult.ImpactNormal, OldFloor.HitResult.Normal, OldLocation, timeTick);
+					if (IsMovingOnGround())
+					{
+						// If still walking, then fall. If not, assume the user set a different mode they want to keep.
+						StartFalling(Iterations, remainingTime, timeTick, Delta, OldLocation);
+					}
+					return;
+				}
+
+				AdjustFloorHeight();
+				SetBase(CurrentFloor.HitResult.Component.Get(), CurrentFloor.HitResult.BoneName);
+			}
+			else if (CurrentFloor.HitResult.bStartPenetrating && remainingTime <= 0.f)
+			{
+				// The floor check failed because it started in penetration
+				// We do not want to try to move downward because the downward sweep failed, rather we'd like to try to pop out of the floor.
+				FHitResult Hit(CurrentFloor.HitResult);
+				Hit.TraceEnd = Hit.TraceStart + FVector(0.f, 0.f, MAX_FLOOR_DIST);
+				const FVector RequestedAdjustment = GetPenetrationAdjustment(Hit);
+				ResolvePenetration(RequestedAdjustment, Hit, UpdatedComponent->GetComponentQuat());
+				bForceNextFloorCheck = true;
+			}
+
+			// check if just entered water
+			if (IsSwimming())
+			{
+				StartSwimming(OldLocation, Velocity, timeTick, remainingTime, Iterations);
+				return;
+			}
+
+			// See if we need to start falling.
+			if (!CurrentFloor.IsWalkableFloor() && !CurrentFloor.HitResult.bStartPenetrating)
+			{
+				const bool bMustJump = bJustTeleported || bZeroDelta || (OldBase == NULL || (!OldBase->IsQueryCollisionEnabled() && MovementBaseUtility::IsDynamicBase(OldBase)));
+				if ((bMustJump || !bCheckedFall) && CheckFall(OldFloor, CurrentFloor.HitResult, Delta, OldLocation, remainingTime, timeTick, Iterations, bMustJump))
+				{
+					return;
+				}
+				bCheckedFall = true;
+			}
+		}
+
+		// Allow overlap events and such to change physics state and velocity
+		if (IsMovingOnGround() && bFloorWalkable)
+		{
+			// Make velocity reflect actual move
+			if (!bJustTeleported && !HasAnimRootMotion() && !CurrentRootMotion.HasOverrideVelocity() && timeTick >= MIN_TICK_TIME)
+			{
+				// TODO-RootMotionSource: Allow this to happen during partial override Velocity, but only set allowed axes?
+				Velocity = (UpdatedComponent->GetComponentLocation() - OldLocation) / timeTick;
+				MaintainHorizontalGroundVelocity();
+			}
+		}
+
+		// If we didn't move at all this iteration then abort (since future iterations will also be stuck).
+		if (UpdatedComponent->GetComponentLocation() == OldLocation)
+		{
+			remainingTime = 0.f;
+			break;
+		}
+	}
+
+
+	FHitResult Hit;
+	FQuat NewRotation = FRotationMatrix::MakeFromXZ(Velocity.GetSafeNormal2D(), FVector::UpVector).ToQuat();
+	SafeMoveUpdatedComponent(FVector::ZeroVector, NewRotation, false, Hit);
 }

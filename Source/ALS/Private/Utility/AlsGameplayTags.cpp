@@ -56,6 +56,7 @@ namespace AlsLocomotionActionTags
 	UE_DEFINE_GAMEPLAY_TAG(Mantling, FName{TEXTVIEW("Als.LocomotionAction.Mantling")})
 	UE_DEFINE_GAMEPLAY_TAG(Ragdolling, FName{TEXTVIEW("Als.LocomotionAction.Ragdolling")})
 	UE_DEFINE_GAMEPLAY_TAG(GettingUp, FName{TEXTVIEW("Als.LocomotionAction.GettingUp")})
+	UE_DEFINE_GAMEPLAY_TAG(Sliding, FName{TEXTVIEW("Als.LocomotionAction.Sliding")})
 	UE_DEFINE_GAMEPLAY_TAG(ProningTransition, FName{TEXTVIEW("Als.LocomotionAction.ProningTransition")})
 }
 

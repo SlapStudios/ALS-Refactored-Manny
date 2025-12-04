@@ -58,6 +58,9 @@ public:
 		Meta = (AutoCreateRefTerm = "ALocation, BLocation, CLocation", ExpandBoolAsExecs = "ReturnValue"))
 	static bool TryCalculatePoleVector(const FVector& ALocation, const FVector& BLocation, const FVector& CLocation,
 	                                   FVector& ProjectionLocation, FVector& PoleDirection);
+									   
+	UFUNCTION(BlueprintPure, Category = "ALS|Math Utility")
+	static FVector GetNormalFromHitResult(const FHitResult& InHit);
 };
 
 inline void FAlsSpringFloatState::Reset()

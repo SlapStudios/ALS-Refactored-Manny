@@ -6,6 +6,21 @@
 
 using FAlsPhysicsRotationDelegate = TMulticastDelegate<void(float DeltaTime)>;
 
+UENUM(BlueprintType)
+enum ECustomMovementMode
+{
+	CMOVE_None		UMETA(Hidden),
+	CMOVE_Slide		UMETA(DisplayName="Slide"),
+	CMOVE_MAX		UMETA(Hidden),
+};
+
+UENUM(BlueprintType)
+enum class ESlideTriggerType : uint8
+{
+	ESTT_DoubleTap		UMETA(DisplayName="Double Tap"),
+	ESTT_SingleTap		UMETA(DisplayName="Single Tap")
+};
+
 class ALS_API FAlsCharacterNetworkMoveData : public FCharacterNetworkMoveData
 {
 private:
@@ -46,6 +61,8 @@ public:
 	FGameplayTag MaxAllowedGait{AlsGaitTags::Running};
 
 	uint8 bWantsToProne : 1;
+
+	uint8 Saved_bPrevWantsToCrouch : 1;
 
 public:
 	virtual void Clear() override;
@@ -146,6 +163,10 @@ public:
 
 	virtual void OnMovementModeChanged(EMovementMode PreviousMovementMode, uint8 PreviousCustomMode) override;
 
+	virtual void OnMovementUpdated(float DeltaTime, const FVector& OldLocation, const FVector& OldVelocity) override;
+
+	virtual bool IsMovingOnGround() const override;
+
 	virtual bool ShouldPerformAirControlForPathFollowing() const override;
 
 	virtual void UpdateBasedRotation(FRotator& FinalRotation, const FRotator& ReducedRotation) override;
@@ -158,6 +179,8 @@ public:
 	virtual float GetMaxSpeed() const override;
 
 	virtual float GetMaxAcceleration() const override;
+
+	virtual float GetMaxBrakingDeceleration() const override;
 
 	virtual bool CanAttemptJump() const override;
 
@@ -210,6 +233,9 @@ public:
 	void SetMovementSettings(UAlsMovementSettings* NewMovementSettings);
 
 	const FAlsMovementGaitSettings& GetGaitSettings() const;
+
+	UFUNCTION(BlueprintPure, Category = "ALS|Character Movement")
+	bool IsCustomMovementMode(ECustomMovementMode InCustomMovementMode) const;
 
 public:
 	const FGameplayTag& GetRotationMode() const;
@@ -272,6 +298,50 @@ public:
 
 public:
 	virtual bool IsProning() const;
+
+public:
+	UPROPERTY(Category = "Character Movement: Sliding", EditAnywhere, BlueprintReadWrite)
+	ESlideTriggerType SlideTriggerType = ESlideTriggerType::ESTT_SingleTap;
+
+	UPROPERTY(Category = "Character Movement: Sliding", EditAnywhere, BlueprintReadWrite)
+	float MinSlideGaitAmount = 2.5f;
+
+	UPROPERTY(Category = "Character Movement: Sliding", EditAnywhere, BlueprintReadWrite)
+	float MinSlideSpeed = 400.f;
+	
+	UPROPERTY(Category = "Character Movement: Sliding", EditAnywhere, BlueprintReadWrite)
+	float MaxSlideSpeed = 800.f;
+	
+	UPROPERTY(Category = "Character Movement: Sliding", EditAnywhere, BlueprintReadWrite)
+	float SlideEnterImpulse = 400.f;
+	
+	UPROPERTY(Category = "Character Movement: Sliding", EditAnywhere, BlueprintReadWrite)
+	float SlideGravityForce = 4000.f;
+	
+	UPROPERTY(Category = "Character Movement: Sliding", EditAnywhere, BlueprintReadWrite)
+	float SlideFrictionFactor = .06f;
+	
+	UPROPERTY(Category = "Character Movement: Sliding", EditAnywhere, BlueprintReadWrite)
+	float BrakingDecelerationSliding = 1000.f;
+
+	UPROPERTY(Category = "Character Movement: Sliding", EditAnywhere, BlueprintReadWrite, meta=(ClampMin="0.0", ClampMax="1.0"))
+	float SlideSteeringStrength = 0.15f;
+	
+	UPROPERTY(Category = "Character Movement: Sliding", EditAnywhere, BlueprintReadWrite)
+	bool bAllowForwardInputDuringSlide = false;
+	
+	UPROPERTY(Category = "Character Movement: Sliding", EditAnywhere, BlueprintReadWrite, meta=(ClampMin="0.0", ClampMax="1.0"))
+	float SlideForwardInputStrength = 0.1f;
+
+protected:
+	bool Safe_bPrevWantsToCrouch;
+
+protected:
+	bool IsSlideTriggered() const;
+	void EnterSlide(EMovementMode PrevMode, ECustomMovementMode PrevCustomMode);
+	void ExitSlide();
+	bool CanSlide(bool bCheckSpeed = true) const;
+	void PhysSlide(float deltaTime, int32 Iterations);
 };
 
 inline const FAlsMovementGaitSettings& UAlsCharacterMovementComponent::GetGaitSettings() const

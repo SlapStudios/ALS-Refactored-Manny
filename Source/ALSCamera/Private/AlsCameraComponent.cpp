@@ -11,6 +11,7 @@
 #include "Utility/AlsMacros.h"
 #include "Utility/AlsRotation.h"
 #include "Utility/AlsUtility.h"
+#include "AlsCharacter.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(AlsCameraComponent)
 
@@ -226,6 +227,7 @@ void UAlsCameraComponent::TickCamera(const float DeltaTime, bool bAllowLag)
 		PivotLocation = PivotTargetLocation;
 
 		CameraLocation = GetFirstPersonCameraLocation();
+
 		CameraRotation = CameraTargetRotation;
 
 		CameraFieldOfView = bOverrideFieldOfView ? FieldOfViewOverride : Settings->FirstPerson.FieldOfView;
@@ -334,14 +336,16 @@ void UAlsCameraComponent::TickCamera(const float DeltaTime, bool bAllowLag)
 FRotator UAlsCameraComponent::CalculateCameraRotation(const FRotator& CameraTargetRotation,
                                                       const float DeltaTime, const bool bAllowLag) const
 {
-	if (!bAllowLag)
+	FRotator NewRotation = CameraTargetRotation;
+	if (bAllowLag)
 	{
-		return CameraTargetRotation;
+		const auto RotationLag = GetAnimInstance()->GetCurveValue(
+			UAlsCameraConstants::RotationLagCurveName());
+		NewRotation = UAlsRotation::DamperExactRotation(
+			CameraRotation, CameraTargetRotation, DeltaTime, RotationLag);
 	}
 
-	const auto RotationLag{GetAnimInstance()->GetCurveValue(UAlsCameraConstants::RotationLagCurveName())};
-
-	return UAlsRotation::DamperExactRotation(CameraRotation, CameraTargetRotation, DeltaTime, RotationLag);
+	return NewRotation;
 }
 
 FVector UAlsCameraComponent::CalculatePivotLagLocation(const FQuat& CameraYawRotation, const float DeltaTime, const bool bAllowLag) const

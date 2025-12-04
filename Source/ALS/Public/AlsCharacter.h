@@ -8,6 +8,7 @@
 #include "State/AlsRollingState.h"
 #include "State/AlsViewState.h"
 #include "Utility/AlsGameplayTags.h"
+#include "Settings/AlsCharacterSettings.h"
 #include "AlsCharacter.generated.h"
 
 struct FAlsMantlingParameters;
@@ -648,6 +649,42 @@ public:
 	void K2_OnStartProne(float HalfHeightAdjust, float ScaledHalfHeightAdjust);
 
 	void RecalculatePronedEyeHeight();
+
+protected:
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Settings|Als Character")
+    TObjectPtr<UAlsCameraLimitSettings> ControlRotationLimitSettings;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "State|Als Character", Transient)
+    FAlsCameraAngleLimits CurrentControlRotationLimits;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "State|Als Character", Transient)
+    FAlsCameraAngleLimits TargetControlRotationLimits;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "State|Als Character", Transient)
+    bool bControlRotationLimitsActive = false;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "State|Als Character", Transient)
+    float ControlRotationLimitAlpha = 0.0f;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "State|Als Character", Transient)
+    FRotator LastControlRotation{ForceInit};
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "State|Als Character", Transient)
+    FRotator SoftLimitAccumulatedForce{ForceInit};
+
+protected:
+    virtual void UpdateControlRotationLimits(float DeltaTime);
+    virtual FAlsCameraAngleLimits GetActiveControlRotationLimits() const;
+    virtual void ApplyControlRotationLimits(float DeltaTime);
+    virtual FRotator ClampControlRotation(const FRotator& DesiredControlRotation, 
+                                         const FAlsCameraAngleLimits& Limits,
+                                         float DeltaTime);
+    virtual void InterpolateControlRotationLimits(FAlsCameraAngleLimits& Current, 
+                                                 const FAlsCameraAngleLimits& Target,
+                                                 float DeltaTime);
+    virtual FRotator CalculateSoftLimitForce(const FRotator& CurrentRotation,
+                                            const FRotator& ClampedRotation,
+                                            float ElasticStrength) const;
 
 	// Debug
 

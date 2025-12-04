@@ -399,7 +399,7 @@ void UAlsAnimationInstance::RefreshViewOnGameThread()
 
 void UAlsAnimationInstance::RefreshView(const float DeltaTime)
 {
-	if (!LocomotionAction.IsValid() || (Character && Character->GetViewMode() == AlsViewModeTags::FirstPerson))
+	// if (!LocomotionAction.IsValid() || (Character && Character->GetViewMode() == AlsViewModeTags::FirstPerson))
 	{
 		ViewState.YawAngle = FMath::UnwindDegrees(UE_REAL_TO_FLOAT(ViewState.Rotation.Yaw - LocomotionState.Rotation.Yaw));
 		ViewState.PitchAngle = FMath::UnwindDegrees(UE_REAL_TO_FLOAT(ViewState.Rotation.Pitch - LocomotionState.Rotation.Pitch));

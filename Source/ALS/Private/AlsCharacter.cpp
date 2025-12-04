@@ -327,6 +327,11 @@ void AAlsCharacter::Tick(const float DeltaTime)
 		return;
 	}
 
+	if (IsLocallyControlled())
+	{
+		UpdateControlRotationLimits(DeltaTime);
+	}
+
 	RefreshMovementBase();
 
 	RefreshMeshProperties();
@@ -556,9 +561,31 @@ void AAlsCharacter::OnMovementModeChanged(const EMovementMode PreviousMovementMo
 			SetLocomotionMode(AlsLocomotionModeTags::InAir);
 			break;
 
+		case MOVE_Custom:
+			switch (GetCharacterMovement()->CustomMovementMode)
+			{
+				case CMOVE_Slide:
+					SetLocomotionMode(AlsLocomotionModeTags::Grounded);
+					SetLocomotionAction(AlsLocomotionActionTags::Sliding);
+					break;
+
+				default:
+					SetLocomotionMode(FGameplayTag::EmptyTag);
+					break;
+			}
+			break;
+
 		default:
 			SetLocomotionMode(FGameplayTag::EmptyTag);
 			break;
+	}
+
+	if (PreviousMovementMode == MOVE_Custom && PreviousCustomMode == CMOVE_Slide)
+	{
+		if (GetLocomotionAction() == AlsLocomotionActionTags::Sliding)
+		{
+			SetLocomotionAction(FGameplayTag::EmptyTag);
+		}
 	}
 
 	Super::OnMovementModeChanged(PreviousMovementMode, PreviousCustomMode);
@@ -2215,4 +2242,251 @@ void AAlsCharacter::RecalculatePronedEyeHeight()
 
 		PronedEyeHeight = AlsCharacterMovement->GetPronedHalfHeight() * EyeHeightRatio;
 	}
+}
+
+void AAlsCharacter::UpdateControlRotationLimits(float DeltaTime)
+{
+	if (!IsValid(Controller) || !IsValid(ControlRotationLimitSettings))
+	{
+		bControlRotationLimitsActive = false;
+		return;
+	}
+
+	// Get the target limits based on current locomotion state
+	TargetControlRotationLimits = GetActiveControlRotationLimits();
+
+	// Update activation state and alpha
+	if (TargetControlRotationLimits.bEnableLimits)
+	{
+		bControlRotationLimitsActive = true;
+		ControlRotationLimitAlpha = FMath::FInterpTo(
+			ControlRotationLimitAlpha,
+			1.0f,
+			DeltaTime,
+			ControlRotationLimitSettings->LimitTransitionSpeed
+		);
+	}
+	else
+	{
+		ControlRotationLimitAlpha = FMath::FInterpTo(
+			ControlRotationLimitAlpha,
+			0.0f,
+			DeltaTime,
+			ControlRotationLimitSettings->LimitTransitionSpeed
+		);
+
+		if (ControlRotationLimitAlpha < 0.01f)
+		{
+			bControlRotationLimitsActive = false;
+			ControlRotationLimitAlpha = 0.0f;
+			SoftLimitAccumulatedForce = FRotator::ZeroRotator;
+		}
+	}
+
+	// Interpolate limit values
+	if (bControlRotationLimitsActive)
+	{
+		InterpolateControlRotationLimits(CurrentControlRotationLimits, TargetControlRotationLimits, DeltaTime);
+
+		// Apply the limits to the control rotation
+		ApplyControlRotationLimits(DeltaTime);
+	}
+
+	// Store current control rotation for next frame
+	LastControlRotation = Controller->GetControlRotation();
+}
+
+FAlsCameraAngleLimits AAlsCharacter::GetActiveControlRotationLimits() const
+{
+	FAlsCameraAngleLimits Limits;
+
+	if (!IsValid(ControlRotationLimitSettings))
+	{
+		return Limits;
+	}
+
+	// Check locomotion action first (higher priority)
+	if (LocomotionAction.IsValid() && ControlRotationLimitSettings->bLocomotionActionOverridesStance)
+	{
+		if (const auto* ActionLimits = ControlRotationLimitSettings->LocomotionActionLimits.Find(LocomotionAction))
+		{
+			return *ActionLimits;
+		}
+	}
+
+	// Fall back to stance limits
+	if (Stance.IsValid())
+	{
+		if (const auto* StanceLimits = ControlRotationLimitSettings->StanceLimits.Find(Stance))
+		{
+			return *StanceLimits;
+		}
+	}
+
+	return Limits;
+}
+
+void AAlsCharacter::ApplyControlRotationLimits(float DeltaTime)
+{
+	if (!IsValid(Controller) || !bControlRotationLimitsActive || ControlRotationLimitAlpha < 0.01f)
+	{
+		return;
+	}
+
+	const FRotator CurrentControlRotation = Controller->GetControlRotation();
+	const FRotator ActorRotation = GetActorRotation();
+
+	// Apply limits and get the clamped rotation
+	const FRotator LimitedRotation = ClampControlRotation(
+		CurrentControlRotation,
+		CurrentControlRotationLimits,
+		DeltaTime
+	);
+
+	// Blend based on alpha for smooth transition
+	const FRotator FinalRotation = FMath::Lerp(CurrentControlRotation, LimitedRotation, ControlRotationLimitAlpha);
+
+	// Only set if there's a difference to avoid unnecessary updates
+	if (!FinalRotation.Equals(CurrentControlRotation, 0.01f))
+	{
+		Controller->SetControlRotation(FinalRotation);
+	}
+}
+
+FRotator AAlsCharacter::ClampControlRotation(const FRotator& DesiredControlRotation,
+	const FAlsCameraAngleLimits& Limits,
+	float DeltaTime)
+{
+	if (!Limits.bEnableLimits)
+	{
+		return DesiredControlRotation;
+	}
+
+	const FRotator ActorRotation = GetActorRotation();
+
+	// Calculate relative rotation (control rotation relative to actor)
+	FRotator RelativeRotation = (DesiredControlRotation - ActorRotation).GetNormalized();
+
+	// Apply hard limits first
+	const float ClampedYaw = FMath::Clamp(RelativeRotation.Yaw, Limits.MinYawAngle, Limits.MaxYawAngle);
+	const float ClampedPitch = FMath::Clamp(RelativeRotation.Pitch, Limits.MinPitchAngle, Limits.MaxPitchAngle);
+
+	FRotator ClampedRelativeRotation(ClampedPitch, ClampedYaw, RelativeRotation.Roll);
+
+	// Apply soft limits if enabled
+	if (Limits.bUseSoftLimits)
+	{
+		// Calculate how close we are to the limits
+		const float YawToMin = RelativeRotation.Yaw - Limits.MinYawAngle;
+		const float YawToMax = Limits.MaxYawAngle - RelativeRotation.Yaw;
+		const float PitchToMin = RelativeRotation.Pitch - Limits.MinPitchAngle;
+		const float PitchToMax = Limits.MaxPitchAngle - RelativeRotation.Pitch;
+
+		FRotator SoftForce = FRotator::ZeroRotator;
+
+		// Apply soft limit force for yaw
+		if (YawToMin < Limits.SoftLimitDeadZone && YawToMin > 0)
+		{
+			const float ForceStrength = 1.0f - (YawToMin / Limits.SoftLimitDeadZone);
+			SoftForce.Yaw = ForceStrength * ForceStrength * Limits.ElasticStrength;
+		}
+		else if (YawToMax < Limits.SoftLimitDeadZone && YawToMax > 0)
+		{
+			const float ForceStrength = 1.0f - (YawToMax / Limits.SoftLimitDeadZone);
+			SoftForce.Yaw = -ForceStrength * ForceStrength * Limits.ElasticStrength;
+		}
+		else if (YawToMin < 0) // Beyond limit
+		{
+			SoftForce.Yaw = Limits.ElasticStrength * (1.0f + FMath::Abs(YawToMin) / 10.0f);
+		}
+		else if (YawToMax < 0) // Beyond limit
+		{
+			SoftForce.Yaw = -Limits.ElasticStrength * (1.0f + FMath::Abs(YawToMax) / 10.0f);
+		}
+
+		// Apply soft limit force for pitch
+		if (PitchToMin < Limits.SoftLimitDeadZone && PitchToMin > 0)
+		{
+			const float ForceStrength = 1.0f - (PitchToMin / Limits.SoftLimitDeadZone);
+			SoftForce.Pitch = ForceStrength * ForceStrength * Limits.ElasticStrength;
+		}
+		else if (PitchToMax < Limits.SoftLimitDeadZone && PitchToMax > 0)
+		{
+			const float ForceStrength = 1.0f - (PitchToMax / Limits.SoftLimitDeadZone);
+			SoftForce.Pitch = -ForceStrength * ForceStrength * Limits.ElasticStrength;
+		}
+		else if (PitchToMin < 0) // Beyond limit
+		{
+			SoftForce.Pitch = Limits.ElasticStrength * (1.0f + FMath::Abs(PitchToMin) / 10.0f);
+		}
+		else if (PitchToMax < 0) // Beyond limit
+		{
+			SoftForce.Pitch = -Limits.ElasticStrength * (1.0f + FMath::Abs(PitchToMax) / 10.0f);
+		}
+
+		// Accumulate and apply soft force with damping
+		SoftLimitAccumulatedForce = SoftLimitAccumulatedForce * 0.9f + SoftForce;
+		ClampedRelativeRotation += SoftLimitAccumulatedForce * DeltaTime;
+
+		// Final clamp to ensure we never exceed hard limits
+		ClampedRelativeRotation.Yaw = FMath::Clamp(ClampedRelativeRotation.Yaw, Limits.MinYawAngle, Limits.MaxYawAngle);
+		ClampedRelativeRotation.Pitch = FMath::Clamp(ClampedRelativeRotation.Pitch, Limits.MinPitchAngle, Limits.MaxPitchAngle);
+	}
+
+	// Convert back to world space
+	return ActorRotation + ClampedRelativeRotation;
+}
+
+void AAlsCharacter::InterpolateControlRotationLimits(FAlsCameraAngleLimits& Current,
+	const FAlsCameraAngleLimits& Target,
+	float DeltaTime)
+{
+	// Copy non-interpolated values
+	Current.bEnableLimits = Target.bEnableLimits;
+	Current.bUseSoftLimits = Target.bUseSoftLimits;
+
+	// Use target's interpolation speed if specified, otherwise use global setting
+	const float InterpSpeed = Target.InterpolationSpeed > 0.0f
+		? Target.InterpolationSpeed
+		: (ControlRotationLimitSettings ? ControlRotationLimitSettings->LimitTransitionSpeed : 3.0f);
+
+	// Interpolate angle limits
+	Current.MinYawAngle = FMath::FInterpTo(Current.MinYawAngle, Target.MinYawAngle, DeltaTime, InterpSpeed);
+	Current.MaxYawAngle = FMath::FInterpTo(Current.MaxYawAngle, Target.MaxYawAngle, DeltaTime, InterpSpeed);
+	Current.MinPitchAngle = FMath::FInterpTo(Current.MinPitchAngle, Target.MinPitchAngle, DeltaTime, InterpSpeed);
+	Current.MaxPitchAngle = FMath::FInterpTo(Current.MaxPitchAngle, Target.MaxPitchAngle, DeltaTime, InterpSpeed);
+
+	// Interpolate soft limit parameters
+	Current.ElasticStrength = FMath::FInterpTo(Current.ElasticStrength, Target.ElasticStrength, DeltaTime, InterpSpeed);
+	Current.SoftLimitDeadZone = FMath::FInterpTo(Current.SoftLimitDeadZone, Target.SoftLimitDeadZone, DeltaTime, InterpSpeed);
+
+	// Copy interpolation speed
+	Current.InterpolationSpeed = Target.InterpolationSpeed;
+}
+
+FRotator AAlsCharacter::CalculateSoftLimitForce(const FRotator& CurrentRotation,
+	const FRotator& ClampedRotation,
+	float ElasticStrength) const
+{
+	FRotator SoftForce = FRotator::ZeroRotator;
+
+	// Calculate overshoot
+	const float YawDifference = CurrentRotation.Yaw - ClampedRotation.Yaw;
+	const float PitchDifference = CurrentRotation.Pitch - ClampedRotation.Pitch;
+
+	if (!FMath::IsNearlyZero(YawDifference, 0.01f))
+	{
+		const float YawExcess = FMath::Abs(YawDifference);
+		const float YawForceMultiplier = FMath::Min(1.0f + (YawExcess / 45.0f), 3.0f);
+		SoftForce.Yaw = -YawDifference * ElasticStrength * YawForceMultiplier * 0.95f; // Damping
+	}
+
+	if (!FMath::IsNearlyZero(PitchDifference, 0.01f))
+	{
+		const float PitchExcess = FMath::Abs(PitchDifference);
+		const float PitchForceMultiplier = FMath::Min(1.0f + (PitchExcess / 30.0f), 3.0f);
+		SoftForce.Pitch = -PitchDifference * ElasticStrength * PitchForceMultiplier * 0.95f; // Damping
+	}
+
+	return SoftForce;
 }
