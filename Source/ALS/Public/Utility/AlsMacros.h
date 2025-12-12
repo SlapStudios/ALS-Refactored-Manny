@@ -2,6 +2,11 @@
 
 #include "Misc/AssertionMacros.h"
 
+#define ALS_PRINT_FILE (FString(FPaths::GetCleanFilename(TEXT(__FILE__))))
+#define ALS_PRINT_FUNC (FString(__FUNCTION__))
+#define ALS_PRINT_LINE (FString::FromInt(__LINE__))
+#define ALS_LOGS_LINE (ALS_PRINT_FUNC + TEXT(" [") + ALS_PRINT_FILE + TEXT(":") + ALS_PRINT_LINE + TEXT("]"))
+
 #define ALS_GET_TYPE_STRING(Type) \
 	((void) sizeof UEAsserts_Private::GetMemberNameCheckedJunk(static_cast<Type*>(nullptr)), TEXTVIEW(#Type))
 

@@ -959,6 +959,13 @@ void AAlsCharacter::ApplyDesiredStance()
 
 		Crouch();
 	}
+	else if (LocomotionAction == AlsLocomotionActionTags::Sliding)
+	{
+		if (IsCrouched())
+		{
+			UnCrouch();
+		}
+	}
 }
 
 bool AAlsCharacter::CanCrouch() const

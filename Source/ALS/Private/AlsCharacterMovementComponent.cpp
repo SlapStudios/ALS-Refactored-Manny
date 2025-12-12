@@ -11,6 +11,7 @@
 #include "Utility/AlsUtility.h"
 #include "Utility/AlsVector.h"
 #include "Engine/ScopedMovementUpdate.h"
+#include "Utility/AlsLog.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(AlsCharacterMovementComponent)
 
@@ -1694,6 +1695,12 @@ bool UAlsCharacterMovementComponent::IsSlideTriggered() const
 
 void UAlsCharacterMovementComponent::EnterSlide(EMovementMode PrevMode, ECustomMovementMode PrevCustomMode)
 {
+	bServerAcceptClientAuthoritativePosition = true;
+	bIgnoreClientMovementErrorChecksAndCorrection = true;
+
+	const FString NetModeStr = GetNetMode() == NM_Client ? TEXT("Client") : TEXT("Server");
+	UE_LOG(LogAls, Verbose, TEXT("%s [%s]"), *ALS_LOGS_LINE, *NetModeStr);
+
 	bWantsToCrouch = true;
 	//bOrientRotationToMovement = false;
 	
@@ -1704,6 +1711,9 @@ void UAlsCharacterMovementComponent::EnterSlide(EMovementMode PrevMode, ECustomM
 
 void UAlsCharacterMovementComponent::ExitSlide()
 {
+	bServerAcceptClientAuthoritativePosition = false;
+	bIgnoreClientMovementErrorChecksAndCorrection = false;
+
 	bWantsToCrouch = false;
 	// bOrientRotationToMovement = true;
 }
