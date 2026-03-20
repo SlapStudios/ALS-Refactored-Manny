@@ -57,6 +57,7 @@ protected:
 	mutable TArray<TFunction<void()>> DisplayDebugTracesQueue;
 #endif
 
+public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "State", Transient)
 	FGameplayTag ViewMode{AlsViewModeTags::ThirdPerson};
 
@@ -160,6 +161,9 @@ protected:
 
 	UFUNCTION(BlueprintPure, Category = "ALS|Animation Instance", Meta = (BlueprintThreadSafe, ReturnDisplayName = "Rig Input"))
 	FAlsControlRigInput GetControlRigInput() const;
+	
+	UFUNCTION(BlueprintPure, Category = "ALS|Animation Instance", Meta = (BlueprintThreadSafe, ReturnDisplayName = "View Mode"))
+	const FGameplayTag& GetViewMode() const;
 
 public:
 	void MarkPendingUpdate();

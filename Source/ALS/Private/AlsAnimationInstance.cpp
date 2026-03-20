@@ -242,6 +242,17 @@ FAlsControlRigInput UAlsAnimationInstance::GetControlRigInput() const
 	};
 }
 
+const FGameplayTag& UAlsAnimationInstance::GetViewMode() const
+{
+	if (IsValid(Character))
+	{
+		return Character->GetViewMode();
+	}
+
+	static const FGameplayTag ThirdPersonViewMode = AlsViewModeTags::ThirdPerson;
+	return ThirdPersonViewMode;
+}
+
 void UAlsAnimationInstance::RefreshMovementBaseOnGameThread()
 {
 	const auto& BasedMovement{Character->GetBasedMovement()};

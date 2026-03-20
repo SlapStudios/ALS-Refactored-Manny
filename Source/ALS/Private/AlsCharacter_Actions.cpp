@@ -928,7 +928,6 @@ void AAlsCharacter::RefreshRagdolling(const float DeltaTime)
 	// Use the speed to scale ragdoll joint strength for physical animation.
 
 	static constexpr auto ReferenceSpeed{1000.0f};
-	static constexpr auto Stiffness{25000.0f};
 
 	const auto SpeedAmount{UAlsMath::Clamp01(UE_REAL_TO_FLOAT(RagdollingState.Velocity.Size() / ReferenceSpeed))};
 

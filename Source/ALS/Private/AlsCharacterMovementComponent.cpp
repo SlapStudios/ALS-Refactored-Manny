@@ -17,6 +17,12 @@
 
 DECLARE_CYCLE_STAT(TEXT("AlsChar ClientUpdatePositionAfterServerUpdate"), STAT_AlsCharacterMovementClientUpdatePositionAfterServerUpdate, STATGROUP_Als);
 
+static TAutoConsoleVariable<int32> CVarAlsDebugInfiniteSlide(
+	TEXT("Als.DebugInfiniteSlide"),
+	0,
+	TEXT("Forces slide to never end and keeps it slow (debug).\n<=0: off, 1: on"),
+	ECVF_Default);
+
 struct FAlsScopedMeshMovementUpdate
 {
 	FAlsScopedMeshMovementUpdate(USkeletalMeshComponent* Mesh, bool bEnabled = true)
@@ -32,7 +38,7 @@ void FAlsCharacterNetworkMoveData::ClientFillNetworkMoveData(const FSavedMove_Ch
 {
 	Super::ClientFillNetworkMoveData(Move, MoveType);
 
-	const auto& SavedMove{static_cast<const FAlsSavedMove&>(Move)}; // NOLINT(cppcoreguidelines-pro-type-static-cast-downcast)
+	const FAlsSavedMove& SavedMove = static_cast<const FAlsSavedMove&>(Move); // NOLINT(cppcoreguidelines-pro-type-static-cast-downcast)
 
 	RotationMode = SavedMove.RotationMode;
 	Stance = SavedMove.Stance;
@@ -67,6 +73,7 @@ void FAlsSavedMove::Clear()
 	MaxAllowedGait = AlsGaitTags::Running;
 
 	bWantsToProne = false;
+	bSavedIsProned = false;
 
 	Saved_bPrevWantsToCrouch = false;
 }
@@ -76,7 +83,7 @@ void FAlsSavedMove::SetMoveFor(ACharacter* Character, const float NewDeltaTime, 
 {
 	Super::SetMoveFor(Character, NewDeltaTime, NewAcceleration, PredictionData);
 
-	const auto* Movement{Cast<UAlsCharacterMovementComponent>(Character->GetCharacterMovement())};
+	const UAlsCharacterMovementComponent* Movement = Cast<UAlsCharacterMovementComponent>(Character->GetCharacterMovement());
 	if (IsValid(Movement))
 	{
 		RotationMode = Movement->RotationMode;
@@ -84,6 +91,7 @@ void FAlsSavedMove::SetMoveFor(ACharacter* Character, const float NewDeltaTime, 
 		MaxAllowedGait = Movement->MaxAllowedGait;
 
 		bWantsToProne = Movement->bWantsToProne;
+		bSavedIsProned = Movement->IsProning();
 
 		Saved_bPrevWantsToCrouch = Movement->Safe_bPrevWantsToCrouch;
 	}
@@ -91,7 +99,16 @@ void FAlsSavedMove::SetMoveFor(ACharacter* Character, const float NewDeltaTime, 
 
 bool FAlsSavedMove::CanCombineWith(const FSavedMovePtr& NewMovePtr, ACharacter* Character, const float MaxDeltaTime) const
 {
-	const auto* NewMove{static_cast<FAlsSavedMove*>(NewMovePtr.Get())}; // NOLINT(cppcoreguidelines-pro-type-static-cast-downcast)
+	const FAlsSavedMove* NewMove = static_cast<FAlsSavedMove*>(NewMovePtr.Get()); // NOLINT(cppcoreguidelines-pro-type-static-cast-downcast)
+
+	if (bWantsToProne != NewMove->bWantsToProne)
+	{
+		return false;
+	}
+	if (bSavedIsProned != NewMove->bSavedIsProned)
+	{
+		return false;
+	}
 
 	return RotationMode == NewMove->RotationMode &&
 	       Stance == NewMove->Stance &&
@@ -106,12 +123,12 @@ void FAlsSavedMove::CombineWith(const FSavedMove_Character* PreviousMove, AChara
 	// undesirable because it will erase our rotation changes made in the AAlsCharacter class. So, to keep the rotation unchanged,
 	// we simply override the saved rotations with the current rotation, and after calling Super::CombineWith() we restore them.
 
-	const auto OriginalRotation{PreviousMove->StartRotation};
-	const auto OriginalRelativeRotation{PreviousMove->StartAttachRelativeRotation};
+	const FRotator OriginalRotation = PreviousMove->StartRotation;
+	const FRotator OriginalRelativeRotation = PreviousMove->StartAttachRelativeRotation;
 
-	const auto* UpdatedComponent{Character->GetCharacterMovement()->UpdatedComponent.Get()};
+	const USceneComponent* UpdatedComponent = Character->GetCharacterMovement()->UpdatedComponent.Get();
 
-	auto* MutablePreviousMove{const_cast<FSavedMove_Character*>(PreviousMove)};
+	FSavedMove_Character* MutablePreviousMove = const_cast<FSavedMove_Character*>(PreviousMove);
 
 	MutablePreviousMove->StartRotation = UpdatedComponent->GetComponentRotation();
 	MutablePreviousMove->StartAttachRelativeRotation = UpdatedComponent->GetRelativeRotation();
@@ -126,12 +143,24 @@ void FAlsSavedMove::PrepMoveFor(ACharacter* Character)
 {
 	Super::PrepMoveFor(Character);
 
-	auto* Movement{Cast<UAlsCharacterMovementComponent>(Character->GetCharacterMovement())};
+	UAlsCharacterMovementComponent* Movement = Cast<UAlsCharacterMovementComponent>(Character->GetCharacterMovement());
 	if (IsValid(Movement))
 	{
 		Movement->RotationMode = RotationMode;
 		Movement->Stance = Stance;
 		Movement->MaxAllowedGait = MaxAllowedGait;
+
+		if (bSavedIsProned != Movement->IsProning())
+		{
+			if (bSavedIsProned)
+			{
+				Movement->Prone(true);
+			}
+			else
+			{
+				Movement->UnProne(true);
+			}
+		}
 
 		Movement->RefreshGaitSettings();
 
@@ -379,7 +408,7 @@ float UAlsCharacterMovementComponent::GetMaxSpeed() const
 		switch (CustomMovementMode)
 		{
 		case CMOVE_Slide:
-			return MaxSlideSpeed;
+			return GetMaxSlideSpeed();
 		}
 	case MOVE_None:
 	default:
@@ -1698,13 +1727,15 @@ void UAlsCharacterMovementComponent::EnterSlide(EMovementMode PrevMode, ECustomM
 	bServerAcceptClientAuthoritativePosition = true;
 	bIgnoreClientMovementErrorChecksAndCorrection = true;
 
+#if 0
 	const FString NetModeStr = GetNetMode() == NM_Client ? TEXT("Client") : TEXT("Server");
 	UE_LOG(LogAls, Verbose, TEXT("%s [%s]"), *ALS_LOGS_LINE, *NetModeStr);
+#endif
 
 	bWantsToCrouch = true;
 	//bOrientRotationToMovement = false;
 	
-	Velocity += Velocity.GetSafeNormal2D() * SlideEnterImpulse;
+	Velocity += Velocity.GetSafeNormal2D() * GetSlideEnterImpulse();
 
 	FindFloor(UpdatedComponent->GetComponentLocation(), CurrentFloor, true, NULL);
 }
@@ -1713,6 +1744,11 @@ void UAlsCharacterMovementComponent::ExitSlide()
 {
 	bServerAcceptClientAuthoritativePosition = false;
 	bIgnoreClientMovementErrorChecksAndCorrection = false;
+
+#if 0
+	const FString NetModeStr = GetNetMode() == NM_Client ? TEXT("Client") : TEXT("Server");
+	UE_LOG(LogAls, Verbose, TEXT("%s [%s]"), *ALS_LOGS_LINE, *NetModeStr);
+#endif
 
 	bWantsToCrouch = false;
 	// bOrientRotationToMovement = true;
@@ -1738,8 +1774,9 @@ void UAlsCharacterMovementComponent::PhysSlide(float deltaTime, int32 Iterations
 		return;
 	}
 
+	const bool bDebugInfiniteSlide = (CVarAlsDebugInfiniteSlide.GetValueOnAnyThread() > 0);
 
-	if (!CanSlide())
+	if (!bDebugInfiniteSlide && !CanSlide())
 	{
 		SetMovementMode(MOVE_Walking);
 		StartNewPhysics(deltaTime, Iterations);
@@ -1796,11 +1833,28 @@ void UAlsCharacterMovementComponent::PhysSlide(float deltaTime, int32 Iterations
 		// Apply acceleration
 		CalcVelocity(timeTick, GroundFriction * SlideFrictionFactor, false, GetMaxBrakingDeceleration());
 
+		if (bDebugInfiniteSlide)
+		{
+			constexpr float DebugMinSpeed2D = 150.f; // cm/s
+			constexpr float DebugMaxSpeed2D = 250.f; // cm/s
+
+			const float Speed2D = Velocity.Size2D();
+			FVector Dir2D = Velocity.GetSafeNormal2D();
+
+			if (Dir2D.IsNearlyZero())
+			{
+				Dir2D = UpdatedComponent ? UpdatedComponent->GetForwardVector().GetSafeNormal2D() : FVector::ForwardVector;
+			}
+
+			const float ClampedSpeed2D = FMath::Clamp(Speed2D, DebugMinSpeed2D, DebugMaxSpeed2D);
+			Velocity = (Dir2D * ClampedSpeed2D) + FVector(0.f, 0.f, Velocity.Z);
+		}
+
 #if 0
 		// Clamp sliding speed to max
-		if (Velocity.Size2D() > MaxSlideSpeed)
+		if (Velocity.Size2D() > GetMaxSlideSpeed())
 		{
-			Velocity = Velocity.GetSafeNormal2D() * MaxSlideSpeed + FVector(0, 0, Velocity.Z);
+			Velocity = Velocity.GetSafeNormal2D() * GetMaxSlideSpeed() + FVector(0, 0, Velocity.Z);
 		}
 #endif
 

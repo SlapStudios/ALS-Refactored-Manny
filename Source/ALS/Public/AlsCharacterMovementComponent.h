@@ -63,6 +63,7 @@ public:
 	uint8 bWantsToProne : 1;
 
 	uint8 Saved_bPrevWantsToCrouch : 1;
+	uint8 bSavedIsProned : 1;
 
 public:
 	virtual void Clear() override;
@@ -226,6 +227,7 @@ protected:
 
 	virtual void MoveAutonomous(float ClientTimeStamp, float DeltaTime, uint8 CompressedFlags, const FVector& NewAcceleration) override;
 
+	UFUNCTION(BlueprintCallable, Category = "ALS|Character Movement")
 	virtual void RefreshGaitSettings();
 
 public:
@@ -335,6 +337,10 @@ public:
 
 protected:
 	bool Safe_bPrevWantsToCrouch;
+
+public:
+	virtual float GetMaxSlideSpeed() const { return MaxSlideSpeed; }
+	virtual float GetSlideEnterImpulse() const { return SlideEnterImpulse; }
 
 protected:
 	bool IsSlideTriggered() const;

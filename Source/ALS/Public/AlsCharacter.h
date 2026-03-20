@@ -327,11 +327,12 @@ protected:
 private:
 	void RefreshGait();
 
-	FGameplayTag CalculateMaxAllowedGait() const;
+	virtual FGameplayTag CalculateMaxAllowedGait() const;
 
-	FGameplayTag CalculateActualGait(const FGameplayTag& MaxAllowedGait) const;
+	virtual FGameplayTag CalculateActualGait(const FGameplayTag& MaxAllowedGait) const;
 
-protected:
+public:
+	UFUNCTION(BlueprintPure, Category = "Als Character")
 	virtual bool CanSprint() const;
 
 	// Overlay Mode
@@ -555,6 +556,10 @@ protected:
 	void OnMantlingEnded();
 
 	// Ragdolling
+
+public:
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Settings|Als Character")
+	float Stiffness{ 25000.0f };
 
 public:
 	const FAlsRagdollingState& GetRagdollingState() const;
