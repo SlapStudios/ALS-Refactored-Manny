@@ -11,6 +11,7 @@
 #include "Settings/AlsCharacterSettings.h"
 #include "AlsCharacter.generated.h"
 
+class UAlsFootstepEffectsSettings;
 struct FAlsMantlingParameters;
 struct FAlsMantlingTraceSettings;
 class UAlsCharacterMovementComponent;
@@ -33,6 +34,9 @@ protected:
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Settings|Als Character")
 	TObjectPtr<UAlsMovementSettings> MovementSettings;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Settings|Als Character")
+	TObjectPtr<UAlsFootstepEffectsSettings> FootstepEffectsSettings;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Settings|Als Character|Desired State",
 		ReplicatedUsing = "OnReplicated_DesiredAiming")
@@ -156,6 +160,8 @@ public:
 
 public:
 	const UAlsCharacterSettings* GetSettings() const;
+	
+	const UAlsFootstepEffectsSettings* GetFootstepEffectsSettings() const;
 
 protected:
 	UFUNCTION(BlueprintNativeEvent, Category = "Als Character", Meta = (ReturnDisplayName = "Handled"))
@@ -714,6 +720,11 @@ private:
 inline const UAlsCharacterSettings* AAlsCharacter::GetSettings() const
 {
 	return Settings;
+}
+
+inline const UAlsFootstepEffectsSettings* AAlsCharacter::GetFootstepEffectsSettings() const
+{
+	return FootstepEffectsSettings;
 }
 
 inline const FGameplayTag& AAlsCharacter::GetViewMode() const

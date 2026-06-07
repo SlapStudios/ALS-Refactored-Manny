@@ -77,7 +77,9 @@ void UAlsAnimNotify_FootstepEffects::Notify(USkeletalMeshComponent* Mesh, UAnimS
 {
 	Super::Notify(Mesh, Sequence, NotifyEventReference);
 
-	if (!IsValid(Mesh) || !ALS_ENSURE(IsValid(FootstepEffectsSettings)))
+	const UAlsFootstepEffectsSettings* TargetFootstepEffectsSettings = ResolveSettings(Mesh);
+
+	if (!IsValid(Mesh) || !ALS_ENSURE(IsValid(TargetFootstepEffectsSettings)))
 	{
 		return;
 	}
@@ -101,8 +103,8 @@ void UAlsAnimNotify_FootstepEffects::Notify(USkeletalMeshComponent* Mesh, UAnimS
 
 	const auto FootZAxis{
 		FootTransform.TransformVectorNoScale(FootBone == EAlsFootBone::Left
-			                                     ? FVector{FootstepEffectsSettings->FootLeftZAxis}
-			                                     : FVector{FootstepEffectsSettings->FootRightZAxis})
+			                                     ? FVector{TargetFootstepEffectsSettings->FootLeftZAxis}
+			                                     : FVector{TargetFootstepEffectsSettings->FootRightZAxis})
 	};
 
 	FCollisionQueryParams QueryParameters{__FUNCTION__, true, Mesh->GetOwner()};
@@ -111,15 +113,15 @@ void UAlsAnimNotify_FootstepEffects::Notify(USkeletalMeshComponent* Mesh, UAnimS
 	FHitResult FootstepHit;
 	if (!World->LineTraceSingleByChannel(FootstepHit, FootTransform.GetLocation(),
 	                                     FootTransform.GetLocation() - FootZAxis *
-	                                     (FootstepEffectsSettings->SurfaceTraceDistance * MeshScale),
-	                                     FootstepEffectsSettings->SurfaceTraceChannel, QueryParameters))
+	                                     (TargetFootstepEffectsSettings->SurfaceTraceDistance * MeshScale),
+	                                     TargetFootstepEffectsSettings->SurfaceTraceChannel, QueryParameters))
 	{
 		// As a fallback, trace down the world Z axis if the first trace didn't hit anything.
 
 		World->LineTraceSingleByChannel(FootstepHit, FootTransform.GetLocation(),
 		                                FootTransform.GetLocation() - FVector{
-			                                0.0f, 0.0f, FootstepEffectsSettings->SurfaceTraceDistance * MeshScale
-		                                }, FootstepEffectsSettings->SurfaceTraceChannel, QueryParameters);
+			                                0.0f, 0.0f, TargetFootstepEffectsSettings->SurfaceTraceDistance * MeshScale
+		                                }, TargetFootstepEffectsSettings->SurfaceTraceChannel, QueryParameters);
 	}
 
 #if ENABLE_DRAW_DEBUG
@@ -136,11 +138,11 @@ void UAlsAnimNotify_FootstepEffects::Notify(USkeletalMeshComponent* Mesh, UAnimS
 	}
 
 	const auto SurfaceType{FootstepHit.PhysMaterial.IsValid() ? FootstepHit.PhysMaterial->SurfaceType.GetValue() : SurfaceType_Default};
-	const auto* EffectSettings{FootstepEffectsSettings->Effects.Find(SurfaceType)};
+	const auto* EffectSettings{TargetFootstepEffectsSettings->Effects.Find(SurfaceType)};
 
 	if (EffectSettings == nullptr)
 	{
-		for (const auto& [OtherSurfaceType, OtherEffectSettings] : FootstepEffectsSettings->Effects)
+		for (const auto& [OtherSurfaceType, OtherEffectSettings] : TargetFootstepEffectsSettings->Effects)
 		{
 			EffectSettings = &OtherEffectSettings;
 			break;
@@ -157,8 +159,8 @@ void UAlsAnimNotify_FootstepEffects::Notify(USkeletalMeshComponent* Mesh, UAnimS
 	const auto FootstepRotation{
 		FRotationMatrix::MakeFromZY(FootstepHit.ImpactNormal,
 		                            FootTransform.TransformVectorNoScale(FootBone == EAlsFootBone::Left
-			                                                                 ? FVector{FootstepEffectsSettings->FootLeftYAxis}
-			                                                                 : FVector{FootstepEffectsSettings->FootRightYAxis})).ToQuat()
+			                                                                 ? FVector{TargetFootstepEffectsSettings->FootLeftYAxis}
+			                                                                 : FVector{TargetFootstepEffectsSettings->FootRightYAxis})).ToQuat()
 	};
 
 #if ENABLE_DRAW_DEBUG
@@ -239,7 +241,14 @@ void UAlsAnimNotify_FootstepEffects::SpawnDecal(USkeletalMeshComponent* Mesh, co
                                                 const FVector& FootstepLocation, const FQuat& FootstepRotation,
                                                 const FHitResult& FootstepHit, const FVector& FootZAxis) const
 {
-	if ((FootstepHit.ImpactNormal | FootZAxis) < FootstepEffectsSettings->DecalSpawnAngleThresholdCos)
+	const UAlsFootstepEffectsSettings* TargetFootstepEffectsSettings = ResolveSettings(Mesh);
+
+	if (!IsValid(Mesh) || !ALS_ENSURE(IsValid(TargetFootstepEffectsSettings)))
+	{
+		return;
+	}
+	
+	if ((FootstepHit.ImpactNormal | FootZAxis) < TargetFootstepEffectsSettings->DecalSpawnAngleThresholdCos)
 	{
 		return;
 	}
@@ -329,4 +338,21 @@ void UAlsAnimNotify_FootstepEffects::SpawnParticleSystem(USkeletalMeshComponent*
 		                                             FVector::OneVector * MeshScale, EAttachLocation::KeepRelativeOffset,
 		                                             true, ENCPoolMethod::AutoRelease);
 	}
+}
+
+const UAlsFootstepEffectsSettings* UAlsAnimNotify_FootstepEffects::ResolveSettings(USkeletalMeshComponent* Mesh) const
+{
+	if (!IsValid(Mesh) && !ALS_ENSURE(IsValid(FootstepEffectsSettings)))
+	{
+		return nullptr;
+	}
+
+	const auto* Character{Cast<AAlsCharacter>(Mesh->GetOwner())};
+	
+	if (IsValid(Character) && IsValid(Character->GetFootstepEffectsSettings()))
+	{
+		return Character->GetFootstepEffectsSettings();
+	}
+	
+	return FootstepEffectsSettings;
 }
