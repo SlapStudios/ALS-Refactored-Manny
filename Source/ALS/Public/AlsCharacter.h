@@ -196,7 +196,7 @@ protected:
 
 	virtual void NotifyLocomotionModeChanged(const FGameplayTag& PreviousLocomotionMode);
 
-	UFUNCTION(BlueprintImplementableEvent, Category = "Als Character")
+	UFUNCTION(BlueprintNativeEvent, Category = "Als Character")
 	void OnLocomotionModeChanged(const FGameplayTag& PreviousLocomotionMode);
 
 	// Desired Aiming

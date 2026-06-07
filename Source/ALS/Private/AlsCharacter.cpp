@@ -661,6 +661,8 @@ void AAlsCharacter::NotifyLocomotionModeChanged(const FGameplayTag& PreviousLoco
 	OnLocomotionModeChanged(PreviousLocomotionMode);
 }
 
+void AAlsCharacter::OnLocomotionModeChanged_Implementation(const FGameplayTag& PreviousLocomotionMode) {}
+
 void AAlsCharacter::SetDesiredAiming(const bool bNewDesiredAiming)
 {
 	SetDesiredAiming(bNewDesiredAiming, true);

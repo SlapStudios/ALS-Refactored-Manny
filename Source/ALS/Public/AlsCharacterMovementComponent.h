@@ -21,6 +21,18 @@ enum class ESlideTriggerType : uint8
 	ESTT_SingleTap		UMETA(DisplayName="Single Tap")
 };
 
+// Controls which sources are allowed to start a slide.
+UENUM(BlueprintType)
+enum class ESlideTriggerMode : uint8
+{
+	// Slide starts automatically when the crouch input is tapped while moving fast enough (default behavior).
+	Automatic	UMETA(DisplayName="Automatic (crouch while sprinting)"),
+	// Slide only starts when explicitly requested via TryStartSlide()/SetWantsToSlide() (e.g. from a Gameplay Ability).
+	Manual		UMETA(DisplayName="Manual (ability-driven)"),
+	// Slide starts from either the automatic crouch trigger or an explicit request.
+	Hybrid		UMETA(DisplayName="Hybrid (either)")
+};
+
 class ALS_API FAlsCharacterNetworkMoveData : public FCharacterNetworkMoveData
 {
 private:
@@ -62,8 +74,14 @@ public:
 
 	uint8 bWantsToProne : 1;
 
+	uint8 bWantsToSlide : 1;
+	uint8 bSlideStartedManually : 1;
+
 	uint8 Saved_bPrevWantsToCrouch : 1;
 	uint8 bSavedIsProned : 1;
+
+	float SavedSlideTime;
+	float SavedSlideCooldownRemaining;
 
 public:
 	virtual void Clear() override;
@@ -302,48 +320,97 @@ public:
 	virtual bool IsProning() const;
 
 public:
+	// Which sources are allowed to start a slide. Defaults to Automatic (tap crouch while sprinting).
+	UPROPERTY(Category = "Character Movement: Sliding", EditAnywhere, BlueprintReadWrite)
+	ESlideTriggerMode SlideTriggerMode = ESlideTriggerMode::Automatic;
+
 	UPROPERTY(Category = "Character Movement: Sliding", EditAnywhere, BlueprintReadWrite)
 	ESlideTriggerType SlideTriggerType = ESlideTriggerType::ESTT_SingleTap;
 
+	// Minimum gait amount (0..3) required for the automatic crouch trigger to start a slide.
 	UPROPERTY(Category = "Character Movement: Sliding", EditAnywhere, BlueprintReadWrite)
 	float MinSlideGaitAmount = 2.5f;
 
+	// Slide ends once horizontal speed drops below this value.
 	UPROPERTY(Category = "Character Movement: Sliding", EditAnywhere, BlueprintReadWrite)
 	float MinSlideSpeed = 400.f;
-	
+
 	UPROPERTY(Category = "Character Movement: Sliding", EditAnywhere, BlueprintReadWrite)
 	float MaxSlideSpeed = 800.f;
-	
+
 	UPROPERTY(Category = "Character Movement: Sliding", EditAnywhere, BlueprintReadWrite)
 	float SlideEnterImpulse = 400.f;
-	
+
 	UPROPERTY(Category = "Character Movement: Sliding", EditAnywhere, BlueprintReadWrite)
 	float SlideGravityForce = 4000.f;
-	
+
 	UPROPERTY(Category = "Character Movement: Sliding", EditAnywhere, BlueprintReadWrite)
 	float SlideFrictionFactor = .06f;
-	
+
 	UPROPERTY(Category = "Character Movement: Sliding", EditAnywhere, BlueprintReadWrite)
 	float BrakingDecelerationSliding = 1000.f;
 
+	// Maximum slide duration in seconds. After this the slide ends regardless of speed. 0 disables the
+	// time limit, making the slide purely speed/cancel driven (the legacy behavior).
+	UPROPERTY(Category = "Character Movement: Sliding", EditAnywhere, BlueprintReadWrite, meta=(ClampMin="0.0", ForceUnits="s"))
+	float MaxSlideDuration = 1.0f;
+
+	// Minimum time in seconds before another slide can start after one ends. 0 disables the cooldown.
+	UPROPERTY(Category = "Character Movement: Sliding", EditAnywhere, BlueprintReadWrite, meta=(ClampMin="0.0", ForceUnits="s"))
+	float SlideCooldown = 0.0f;
+
+	// Fraction (0..1) of SlideMaxSteerAngle that lateral input can rotate the slide velocity by.
 	UPROPERTY(Category = "Character Movement: Sliding", EditAnywhere, BlueprintReadWrite, meta=(ClampMin="0.0", ClampMax="1.0"))
-	float SlideSteeringStrength = 0.15f;
-	
-	UPROPERTY(Category = "Character Movement: Sliding", EditAnywhere, BlueprintReadWrite)
-	bool bAllowForwardInputDuringSlide = false;
-	
-	UPROPERTY(Category = "Character Movement: Sliding", EditAnywhere, BlueprintReadWrite, meta=(ClampMin="0.0", ClampMax="1.0"))
-	float SlideForwardInputStrength = 0.1f;
+	float SlideSteeringStrength = 0.5f;
+
+	// Maximum angular speed (deg/s) the slide direction can be steered at full SlideSteeringStrength.
+	UPROPERTY(Category = "Character Movement: Sliding", EditAnywhere, BlueprintReadWrite, meta=(ClampMin="0.0", ForceUnits="deg/s"))
+	float SlideMaxSteerAngle = 25.f;
 
 protected:
 	bool Safe_bPrevWantsToCrouch;
+
+	// Runtime slide state. Replayed/restored via FAlsSavedMove so it stays client-predicted.
+
+	// Set by TryStartSlide()/SetWantsToSlide(). Replicated to the autonomous proxy via FLAG_Custom_1.
+	UPROPERTY(Category = "Character Movement: Sliding", VisibleInstanceOnly, BlueprintReadOnly)
+	uint8 bWantsToSlide : 1;
+
+	// True when the current slide was started by an explicit request rather than the crouch trigger.
+	bool Safe_bSlideStartedManually;
+
+	// Elapsed time of the current slide, compared against MaxSlideDuration.
+	float Safe_SlideTime;
+
+	// Counts down while not sliding; a new slide cannot start until it reaches zero.
+	float Safe_SlideCooldownRemaining;
 
 public:
 	virtual float GetMaxSlideSpeed() const { return MaxSlideSpeed; }
 	virtual float GetSlideEnterImpulse() const { return SlideEnterImpulse; }
 
+	// Requests a slide. Honors SlideTriggerMode (no effect in Automatic mode). Returns whether the
+	// slide can start right now (the actual transition happens on the next movement update so it stays
+	// network-predicted). Intended to be called from a Gameplay Ability or any external system.
+	UFUNCTION(BlueprintCallable, Category = "ALS|Character Movement")
+	bool TryStartSlide();
+
+	// Clears the manual slide request and ends the slide if it was started manually.
+	UFUNCTION(BlueprintCallable, Category = "ALS|Character Movement")
+	void StopSlide();
+
+	// Low-level setter for the manual slide request flag.
+	UFUNCTION(BlueprintCallable, Category = "ALS|Character Movement")
+	void SetWantsToSlide(bool bNewWantsToSlide);
+
+	UFUNCTION(BlueprintPure, Category = "ALS|Character Movement")
+	bool IsSliding() const;
+
 protected:
 	bool IsSlideTriggered() const;
+	bool CanStartSlide() const;
+	bool ShouldEnterSlide() const;
+	bool ShouldStopSlide() const;
 	void EnterSlide(EMovementMode PrevMode, ECustomMovementMode PrevCustomMode);
 	void ExitSlide();
 	bool CanSlide(bool bCheckSpeed = true) const;
