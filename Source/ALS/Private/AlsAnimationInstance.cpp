@@ -234,6 +234,7 @@ FAlsControlRigInput UAlsAnimationInstance::GetControlRigInput() const
 		.VelocityBlendForwardAmount = GroundedState.VelocityBlend.ForwardAmount,
 		.VelocityBlendBackwardAmount = GroundedState.VelocityBlend.BackwardAmount,
 		.SpineYawAngle = SpineState.YawAngle,
+		.SpinePitchAngle = SpineState.PitchAngle,
 		.PelvisOffsetAmount = PelvisOffsetAmount,
 		.FootLeftLocation{FVector{FeetState.Left.FinalLocation}},
 		.FootLeftRotation{FQuat{FeetState.Left.FinalRotation}},
@@ -536,6 +537,10 @@ void UAlsAnimationInstance::RefreshSpine(const float SpineBlendAmount, const flo
 	}
 
 	SpineState.YawAngle = UAlsRotation::LerpAngle(0.0f, SpineState.CurrentYawAngle, SpineBlendAmount);
+
+	const auto PitchAimingAmount{GetCurveValueClamped01(UAlsConstants::AllowPitchAimingCurveName())};
+	//SpineState.PitchAngle = UAlsMath::DamperExact(SpineState.PitchAngle, UAlsRotation::LerpAngle(0.0f, ViewState.PitchAngle, SpineBlendAmount * PitchAimingAmount), DeltaTime, 0.1f);
+	SpineState.PitchAngle = UAlsRotation::LerpAngle(0.0f, ViewState.PitchAngle, SpineBlendAmount * PitchAimingAmount);
 }
 
 void UAlsAnimationInstance::InitializeHead()
@@ -621,7 +626,7 @@ void UAlsAnimationInstance::RefreshHead()
 		                              -180.0f + UAlsRotation::CounterClockwiseRotationAngleThreshold,
 		                              180.0f - UAlsRotation::CounterClockwiseRotationAngleThreshold);
 
-		if (ViewMode != AlsViewModeTags::FirstPerson)
+		if (GetViewMode() != AlsViewModeTags::FirstPerson)
 		{
 			if (HeadState.YawAngle >= SwitchSidesCurrentYawAngleThreshold &&
 			    TargetYawAngle <= -SwitchSidesTargetYawAngleThreshold)
@@ -1788,7 +1793,7 @@ void UAlsAnimationInstance::StopQueuedTransitionAndTurnInPlaceAnimations()
 
 bool UAlsAnimationInstance::IsRotateInPlaceAllowed()
 {
-	return RotationMode == AlsRotationModeTags::Aiming || ViewMode == AlsViewModeTags::FirstPerson;
+	return RotationMode == AlsRotationModeTags::Aiming || GetViewMode() == AlsViewModeTags::FirstPerson;
 }
 
 void UAlsAnimationInstance::RefreshRotateInPlace()
@@ -1851,7 +1856,7 @@ void UAlsAnimationInstance::RefreshRotateInPlace()
 
 bool UAlsAnimationInstance::IsTurnInPlaceAllowed()
 {
-	return RotationMode == AlsRotationModeTags::ViewDirection && ViewMode != AlsViewModeTags::FirstPerson;
+	return RotationMode == AlsRotationModeTags::ViewDirection && GetViewMode() != AlsViewModeTags::FirstPerson;
 }
 
 void UAlsAnimationInstance::InitializeTurnInPlace()
