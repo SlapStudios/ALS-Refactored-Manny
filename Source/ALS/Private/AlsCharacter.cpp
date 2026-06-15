@@ -21,7 +21,7 @@
 
 namespace AlsCharacter
 {
-	constexpr auto MinAimingYawAngleLimit{70.0f};
+	constexpr auto MinAimingYawAngleLimit{40.0f};
 }
 
 AAlsCharacter::AAlsCharacter(const FObjectInitializer& ObjectInitializer) : Super{
