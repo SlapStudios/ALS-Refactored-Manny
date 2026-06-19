@@ -386,7 +386,7 @@ void UAlsCharacterMovementComponent::UpdateBasedRotation(FRotator& FinalRotation
 	FVector MovementBaseLocation;
 	FQuat MovementBaseRotation;
 
-	MovementBaseUtility::GetMovementBaseTransform(BasedMovement.MovementBase, BasedMovement.BoneName,
+	MovementBaseUtility::GetMovementBaseTransform(&BasedMovement.MovementBaseInterfaceData, BasedMovement.BoneName,
 	                                              MovementBaseLocation, MovementBaseRotation);
 
 	if (!OldBaseQuat.Equals(MovementBaseRotation, UE_SMALL_NUMBER))
@@ -608,6 +608,10 @@ void UAlsCharacterMovementComponent::MoveSmooth(const FVector& InVelocity, const
 	Super::MoveSmooth(InVelocity, DeltaTime, StepDownResult);
 }
 
+// This is a copy of UCharacterMovementComponent::PhysWalking that mirrors engine movement-base internals.
+// The UPrimitiveComponent-based movement base API was deprecated in UE 5.8; suppress those warnings here
+// rather than diverge from the engine implementation this is intentionally kept in sync with.
+PRAGMA_DISABLE_DEPRECATION_WARNINGS
 void UAlsCharacterMovementComponent::PhysWalking(const float DeltaTime, int32 IterationsCount)
 {
 	RefreshGroundedMovementSettings();
@@ -871,6 +875,7 @@ void UAlsCharacterMovementComponent::PhysWalking(const float DeltaTime, int32 It
 
 	// ReSharper restore All
 }
+PRAGMA_ENABLE_DEPRECATION_WARNINGS
 
 void UAlsCharacterMovementComponent::PhysNavWalking(const float DeltaTime, const int32 IterationsCount)
 {
@@ -937,7 +942,7 @@ bool UAlsCharacterMovementComponent::ClientUpdatePositionAfterServerUpdate()
 
 	if (ClientData->SavedMoves.Num() == 0)
 	{
-		UE_LOG(LogNetPlayerMovement, Verbose, TEXT("ClientUpdatePositionAfterServerUpdate No saved moves to replay"), ClientData->SavedMoves.Num());
+		UE_LOG(LogNetPlayerMovement, Verbose, TEXT("ClientUpdatePositionAfterServerUpdate No saved moves to replay"));
 
 		// With no saved moves to resimulate, the move the server updated us with is the last move we've done, no resimulation needed.
 		CharacterOwner->bClientResimulateRootMotion = false;
@@ -1884,6 +1889,9 @@ bool UAlsCharacterMovementComponent::CanSlide(bool bCheckSpeed /*= true*/) const
 	return bValidSurface && bEnoughSpeed;
 }
 
+// Like PhysWalking above, this mirrors engine movement-base internals; suppress the UE 5.8
+// UPrimitiveComponent-based movement base deprecation warnings rather than diverge from the engine.
+PRAGMA_DISABLE_DEPRECATION_WARNINGS
 void UAlsCharacterMovementComponent::PhysSlide(float deltaTime, int32 Iterations)
 {
 	if (deltaTime < MIN_TICK_TIME)
@@ -2138,3 +2146,4 @@ void UAlsCharacterMovementComponent::PhysSlide(float deltaTime, int32 Iterations
 	FQuat NewRotation = FRotationMatrix::MakeFromXZ(Velocity.GetSafeNormal2D(), FVector::UpVector).ToQuat();
 	SafeMoveUpdatedComponent(FVector::ZeroVector, NewRotation, false, Hit);
 }
+PRAGMA_ENABLE_DEPRECATION_WARNINGS

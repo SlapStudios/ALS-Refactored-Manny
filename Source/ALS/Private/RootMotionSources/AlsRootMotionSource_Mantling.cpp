@@ -82,7 +82,9 @@ void FAlsRootMotionSource_Mantling::PrepareRootMotion(const float SimulationDelt
 	FTransform StartTransform{StartRotation, StartLocation};
 	FTransform TargetTransform{TargetRotation, TargetLocation};
 
+	PRAGMA_DISABLE_DEPRECATION_WARNINGS // UE 5.8 deprecated the UPrimitiveComponent movement-base API; kept for behavior parity.
 	if (MovementBaseUtility::UseRelativeLocation(TargetPrimitive.Get()))
+	PRAGMA_ENABLE_DEPRECATION_WARNINGS
 	{
 		StartTransform *= TargetPrimitive->GetComponentTransform();
 		StartTransform.SetScale3D(FVector::OneVector);

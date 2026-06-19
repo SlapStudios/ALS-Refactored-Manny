@@ -258,9 +258,11 @@ void UAlsAnimationInstance::RefreshMovementBaseOnGameThread()
 {
 	const auto& BasedMovement{Character->GetBasedMovement()};
 
-	if (BasedMovement.MovementBase != MovementBase.Primitive || BasedMovement.BoneName != MovementBase.BoneName)
+	auto* const MovementBaseComponent{Cast<UPrimitiveComponent>(BasedMovement.MovementBaseInterfaceData.GetMovementBaseObject())};
+
+	if (MovementBaseComponent != MovementBase.Primitive || BasedMovement.BoneName != MovementBase.BoneName)
 	{
-		MovementBase.Primitive = BasedMovement.MovementBase;
+		MovementBase.Primitive = MovementBaseComponent;
 		MovementBase.BoneName = BasedMovement.BoneName;
 		MovementBase.bBaseChanged = true;
 	}
@@ -274,7 +276,7 @@ void UAlsAnimationInstance::RefreshMovementBaseOnGameThread()
 
 	const auto PreviousRotation{MovementBase.Rotation};
 
-	MovementBaseUtility::GetMovementBaseTransform(BasedMovement.MovementBase, BasedMovement.BoneName,
+	MovementBaseUtility::GetMovementBaseTransform(&BasedMovement.MovementBaseInterfaceData, BasedMovement.BoneName,
 	                                              MovementBase.Location, MovementBase.Rotation);
 
 	MovementBase.DeltaRotation = MovementBase.bHasRelativeLocation && !MovementBase.bBaseChanged
