@@ -75,6 +75,11 @@ void FAlsSavedMove::Clear()
 	bWantsToProne = false;
 	bSavedIsProned = false;
 
+	bWantsToSlide = false;
+	bSlideStartedManually = false;
+	SavedSlideTime = 0.0f;
+	SavedSlideCooldownRemaining = 0.0f;
+
 	Saved_bPrevWantsToCrouch = false;
 }
 
@@ -93,6 +98,11 @@ void FAlsSavedMove::SetMoveFor(ACharacter* Character, const float NewDeltaTime, 
 		bWantsToProne = Movement->bWantsToProne;
 		bSavedIsProned = Movement->IsProning();
 
+		bWantsToSlide = Movement->bWantsToSlide;
+		bSlideStartedManually = Movement->Safe_bSlideStartedManually;
+		SavedSlideTime = Movement->Safe_SlideTime;
+		SavedSlideCooldownRemaining = Movement->Safe_SlideCooldownRemaining;
+
 		Saved_bPrevWantsToCrouch = Movement->Safe_bPrevWantsToCrouch;
 	}
 }
@@ -106,6 +116,10 @@ bool FAlsSavedMove::CanCombineWith(const FSavedMovePtr& NewMovePtr, ACharacter* 
 		return false;
 	}
 	if (bSavedIsProned != NewMove->bSavedIsProned)
+	{
+		return false;
+	}
+	if (bWantsToSlide != NewMove->bWantsToSlide)
 	{
 		return false;
 	}
@@ -164,6 +178,11 @@ void FAlsSavedMove::PrepMoveFor(ACharacter* Character)
 
 		Movement->RefreshGaitSettings();
 
+		Movement->bWantsToSlide = bWantsToSlide;
+		Movement->Safe_bSlideStartedManually = bSlideStartedManually;
+		Movement->Safe_SlideTime = SavedSlideTime;
+		Movement->Safe_SlideCooldownRemaining = SavedSlideCooldownRemaining;
+
 		Movement->Safe_bPrevWantsToCrouch = Saved_bPrevWantsToCrouch;
 	}
 }
@@ -175,6 +194,11 @@ uint8 FAlsSavedMove::GetCompressedFlags() const
 	if (bWantsToProne)
 	{
 		Result |= FLAG_Custom_0;
+	}
+
+	if (bWantsToSlide)
+	{
+		Result |= FLAG_Custom_1;
 	}
 
 	return Result;
@@ -248,6 +272,11 @@ UAlsCharacterMovementComponent::UAlsCharacterMovementComponent()
 
 	NavAgentProps.bCanCrouch = true;
 	NavMovementProperties.bUseAccelerationForPaths = true;
+
+	bWantsToSlide = false;
+	Safe_bSlideStartedManually = false;
+	Safe_SlideTime = 0.0f;
+	Safe_SlideCooldownRemaining = 0.0f;
 }
 
 #if WITH_EDITOR
@@ -357,7 +386,7 @@ void UAlsCharacterMovementComponent::UpdateBasedRotation(FRotator& FinalRotation
 	FVector MovementBaseLocation;
 	FQuat MovementBaseRotation;
 
-	MovementBaseUtility::GetMovementBaseTransform(BasedMovement.MovementBase, BasedMovement.BoneName,
+	MovementBaseUtility::GetMovementBaseTransform(&BasedMovement.MovementBaseInterfaceData, BasedMovement.BoneName,
 	                                              MovementBaseLocation, MovementBaseRotation);
 
 	if (!OldBaseQuat.Equals(MovementBaseRotation, UE_SMALL_NUMBER))
@@ -446,14 +475,17 @@ bool UAlsCharacterMovementComponent::CanAttemptJump() const
 
 void UAlsCharacterMovementComponent::UpdateCharacterStateBeforeMovement(float DeltaSeconds)
 {
-	if (MovementMode == MOVE_Walking && IsSlideTriggered())
+	// Tick down the re-slide cooldown while not sliding.
+	if (!IsSliding() && Safe_SlideCooldownRemaining > 0.0f)
 	{
-		if (CanSlide(false) && GaitAmount >= MinSlideGaitAmount)
-		{
-			SetMovementMode(MOVE_Custom, CMOVE_Slide);
-		}
+		Safe_SlideCooldownRemaining = FMath::Max(0.0f, Safe_SlideCooldownRemaining - DeltaSeconds);
 	}
-	else if (IsCustomMovementMode(CMOVE_Slide) && !bWantsToCrouch)
+
+	if (MovementMode == MOVE_Walking && ShouldEnterSlide())
+	{
+		SetMovementMode(MOVE_Custom, CMOVE_Slide);
+	}
+	else if (IsCustomMovementMode(CMOVE_Slide) && ShouldStopSlide())
 	{
 		SetMovementMode(MOVE_Walking);
 	}
@@ -542,6 +574,7 @@ void UAlsCharacterMovementComponent::UpdateFromCompressedFlags(uint8 Flags)
 	}
 
 	bWantsToProne = ((Flags & FSavedMove_Character::FLAG_Custom_0) != 0);
+	bWantsToSlide = ((Flags & FSavedMove_Character::FLAG_Custom_1) != 0);
 }
 
 void UAlsCharacterMovementComponent::ControlledCharacterMove(const FVector& InputVector, const float DeltaTime)
@@ -575,6 +608,10 @@ void UAlsCharacterMovementComponent::MoveSmooth(const FVector& InVelocity, const
 	Super::MoveSmooth(InVelocity, DeltaTime, StepDownResult);
 }
 
+// This is a copy of UCharacterMovementComponent::PhysWalking that mirrors engine movement-base internals.
+// The UPrimitiveComponent-based movement base API was deprecated in UE 5.8; suppress those warnings here
+// rather than diverge from the engine implementation this is intentionally kept in sync with.
+PRAGMA_DISABLE_DEPRECATION_WARNINGS
 void UAlsCharacterMovementComponent::PhysWalking(const float DeltaTime, int32 IterationsCount)
 {
 	RefreshGroundedMovementSettings();
@@ -838,6 +875,7 @@ void UAlsCharacterMovementComponent::PhysWalking(const float DeltaTime, int32 It
 
 	// ReSharper restore All
 }
+PRAGMA_ENABLE_DEPRECATION_WARNINGS
 
 void UAlsCharacterMovementComponent::PhysNavWalking(const float DeltaTime, const int32 IterationsCount)
 {
@@ -904,7 +942,7 @@ bool UAlsCharacterMovementComponent::ClientUpdatePositionAfterServerUpdate()
 
 	if (ClientData->SavedMoves.Num() == 0)
 	{
-		UE_LOG(LogNetPlayerMovement, Verbose, TEXT("ClientUpdatePositionAfterServerUpdate No saved moves to replay"), ClientData->SavedMoves.Num());
+		UE_LOG(LogNetPlayerMovement, Verbose, TEXT("ClientUpdatePositionAfterServerUpdate No saved moves to replay"));
 
 		// With no saved moves to resimulate, the move the server updated us with is the last move we've done, no resimulation needed.
 		CharacterOwner->bClientResimulateRootMotion = false;
@@ -1722,6 +1760,72 @@ bool UAlsCharacterMovementComponent::IsSlideTriggered() const
 	return false;
 }
 
+bool UAlsCharacterMovementComponent::IsSliding() const
+{
+	return IsCustomMovementMode(CMOVE_Slide);
+}
+
+bool UAlsCharacterMovementComponent::CanStartSlide() const
+{
+	// Must be on walkable ground, over a valid surface, fast enough, and off cooldown.
+	return IsMovingOnGround() && Safe_SlideCooldownRemaining <= 0.0f && CanSlide(true);
+}
+
+bool UAlsCharacterMovementComponent::ShouldEnterSlide() const
+{
+	if (IsSliding())
+	{
+		return false;
+	}
+
+	// Automatic trigger: tap crouch (per SlideTriggerType) while moving fast enough.
+	const bool bAutoTrigger = SlideTriggerMode != ESlideTriggerMode::Manual &&
+	                          IsSlideTriggered() && GaitAmount >= MinSlideGaitAmount;
+
+	// Manual trigger: an external system (e.g. a Gameplay Ability) requested a slide.
+	const bool bManualTrigger = SlideTriggerMode != ESlideTriggerMode::Automatic && bWantsToSlide;
+
+	return (bAutoTrigger || bManualTrigger) && CanStartSlide();
+}
+
+bool UAlsCharacterMovementComponent::ShouldStopSlide() const
+{
+	// Time limit reached.
+	if (MaxSlideDuration > 0.0f && Safe_SlideTime >= MaxSlideDuration)
+	{
+		return true;
+	}
+
+	// The originating request was released.
+	if (Safe_bSlideStartedManually && !bWantsToSlide)
+	{
+		return true;
+	}
+
+	// The speed-floor / invalid-surface cases are handled inside PhysSlide via CanSlide(), and jumping
+	// switches the movement mode to falling, both of which exit the slide on their own.
+	return false;
+}
+
+bool UAlsCharacterMovementComponent::TryStartSlide()
+{
+	SetWantsToSlide(true);
+
+	// The actual mode change happens in UpdateCharacterStateBeforeMovement so it stays predicted;
+	// report whether it is currently able to start.
+	return SlideTriggerMode != ESlideTriggerMode::Automatic && CanStartSlide();
+}
+
+void UAlsCharacterMovementComponent::StopSlide()
+{
+	SetWantsToSlide(false);
+}
+
+void UAlsCharacterMovementComponent::SetWantsToSlide(bool bNewWantsToSlide)
+{
+	bWantsToSlide = bNewWantsToSlide;
+}
+
 void UAlsCharacterMovementComponent::EnterSlide(EMovementMode PrevMode, ECustomMovementMode PrevCustomMode)
 {
 	bServerAcceptClientAuthoritativePosition = true;
@@ -1734,8 +1838,20 @@ void UAlsCharacterMovementComponent::EnterSlide(EMovementMode PrevMode, ECustomM
 
 	bWantsToCrouch = true;
 	//bOrientRotationToMovement = false;
-	
+
 	Velocity += Velocity.GetSafeNormal2D() * GetSlideEnterImpulse();
+
+	// Clamp the entry speed so the impulse can't launch the slide past the configured maximum.
+	const float MaxSpeed = GetMaxSlideSpeed();
+	if (Velocity.SizeSquared2D() > FMath::Square(MaxSpeed))
+	{
+		Velocity = Velocity.GetSafeNormal2D() * MaxSpeed + FVector(0.0f, 0.0f, Velocity.Z);
+	}
+
+	// Reset per-slide tracking. Records whether this slide was started by an explicit request so the
+	// exit logic knows which input to watch for release.
+	Safe_SlideTime = 0.0f;
+	Safe_bSlideStartedManually = SlideTriggerMode != ESlideTriggerMode::Automatic && bWantsToSlide;
 
 	FindFloor(UpdatedComponent->GetComponentLocation(), CurrentFloor, true, NULL);
 }
@@ -1752,6 +1868,12 @@ void UAlsCharacterMovementComponent::ExitSlide()
 
 	bWantsToCrouch = false;
 	// bOrientRotationToMovement = true;
+
+	// Start the re-slide cooldown and clear the request so a held manual input doesn't instantly retrigger.
+	Safe_SlideCooldownRemaining = SlideCooldown;
+	Safe_SlideTime = 0.0f;
+	Safe_bSlideStartedManually = false;
+	bWantsToSlide = false;
 }
 
 bool UAlsCharacterMovementComponent::CanSlide(bool bCheckSpeed /*= true*/) const
@@ -1767,6 +1889,9 @@ bool UAlsCharacterMovementComponent::CanSlide(bool bCheckSpeed /*= true*/) const
 	return bValidSurface && bEnoughSpeed;
 }
 
+// Like PhysWalking above, this mirrors engine movement-base internals; suppress the UE 5.8
+// UPrimitiveComponent-based movement base deprecation warnings rather than diverge from the engine.
+PRAGMA_DISABLE_DEPRECATION_WARNINGS
 void UAlsCharacterMovementComponent::PhysSlide(float deltaTime, int32 Iterations)
 {
 	if (deltaTime < MIN_TICK_TIME)
@@ -1810,27 +1935,33 @@ void UAlsCharacterMovementComponent::PhysSlide(float deltaTime, int32 Iterations
 		SlopeForce.Z = 0.f;
 		Velocity += SlopeForce * SlideGravityForce * deltaTime;
 
-		// Handle player input during slide with customizable strength
-		if (!Acceleration.IsZero())
+		// Steer the slide by rotating the horizontal velocity toward the input direction, capped by a
+		// maximum angular speed. This gives lateral control without ever adding speed, so holding a
+		// movement key (forward included) can no longer extend the slide.
+		if (SlideSteeringStrength > 0.f && !Acceleration.IsZero())
 		{
-			FVector InputAcceleration = FVector::ZeroVector;
+			const FVector VelocityDir = Velocity.GetSafeNormal2D();
+			const FVector InputDir = Acceleration.GetSafeNormal2D();
 
-			// Calculate lateral (left/right) input influence
-			float LateralInput = FVector::DotProduct(Acceleration.GetSafeNormal2D(), UpdatedComponent->GetRightVector());
-			InputAcceleration += UpdatedComponent->GetRightVector() * LateralInput * SlideSteeringStrength;
-
-			// Optionally allow forward/backward input influence
-			if (bAllowForwardInputDuringSlide)
+			if (!VelocityDir.IsNearlyZero() && !InputDir.IsNearlyZero())
 			{
-				float ForwardInput = FVector::DotProduct(Acceleration.GetSafeNormal2D(), UpdatedComponent->GetForwardVector());
-				InputAcceleration += UpdatedComponent->GetForwardVector() * ForwardInput * SlideForwardInputStrength;
-			}
+				const float CurrentYaw = FMath::RadiansToDegrees(FMath::Atan2(VelocityDir.Y, VelocityDir.X));
+				const float TargetYaw = FMath::RadiansToDegrees(FMath::Atan2(InputDir.Y, InputDir.X));
 
-			// Scale by the original acceleration magnitude and apply
-			Acceleration = InputAcceleration * Acceleration.Size();
+				const float MaxStep = SlideMaxSteerAngle * SlideSteeringStrength * timeTick;
+				const float DeltaYaw = FMath::Clamp(FRotator::NormalizeAxis(TargetYaw - CurrentYaw), -MaxStep, MaxStep);
+
+				const float Speed2D = Velocity.Size2D();
+				const FVector NewDir = FRotator(0.f, DeltaYaw, 0.f).RotateVector(VelocityDir);
+				Velocity = NewDir * Speed2D + FVector(0.f, 0.f, Velocity.Z);
+			}
 		}
 
-		// Apply acceleration
+		// Never feed input back into acceleration: with zero acceleration, CalcVelocity always applies
+		// BrakingDecelerationSliding, so the slide reliably bleeds speed every frame.
+		Acceleration = FVector::ZeroVector;
+
+		// Apply friction / braking.
 		CalcVelocity(timeTick, GroundFriction * SlideFrictionFactor, false, GetMaxBrakingDeceleration());
 
 		if (bDebugInfiniteSlide)
@@ -1849,14 +1980,14 @@ void UAlsCharacterMovementComponent::PhysSlide(float deltaTime, int32 Iterations
 			const float ClampedSpeed2D = FMath::Clamp(Speed2D, DebugMinSpeed2D, DebugMaxSpeed2D);
 			Velocity = (Dir2D * ClampedSpeed2D) + FVector(0.f, 0.f, Velocity.Z);
 		}
-
-#if 0
-		// Clamp sliding speed to max
-		if (Velocity.Size2D() > GetMaxSlideSpeed())
+		else if (Velocity.SizeSquared2D() > FMath::Square(GetMaxSlideSpeed()))
 		{
-			Velocity = Velocity.GetSafeNormal2D() * GetMaxSlideSpeed() + FVector(0, 0, Velocity.Z);
+			// Clamp sliding speed to the configured maximum (e.g. after a downhill boost).
+			Velocity = Velocity.GetSafeNormal2D() * GetMaxSlideSpeed() + FVector(0.f, 0.f, Velocity.Z);
 		}
-#endif
+
+		// Accumulate slide duration for the MaxSlideDuration / ShouldStopSlide check.
+		Safe_SlideTime += timeTick;
 
 		// Compute move parameters
 		const FVector MoveVelocity = Velocity;
@@ -2015,3 +2146,4 @@ void UAlsCharacterMovementComponent::PhysSlide(float deltaTime, int32 Iterations
 	FQuat NewRotation = FRotationMatrix::MakeFromXZ(Velocity.GetSafeNormal2D(), FVector::UpVector).ToQuat();
 	SafeMoveUpdatedComponent(FVector::ZeroVector, NewRotation, false, Hit);
 }
+PRAGMA_ENABLE_DEPRECATION_WARNINGS

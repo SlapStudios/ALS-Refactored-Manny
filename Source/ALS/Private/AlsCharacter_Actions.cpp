@@ -407,7 +407,9 @@ bool AAlsCharacter::StartMantling(const FAlsMantlingTraceSettings& TraceSettings
 	// If the target primitive can't move, then use world coordinates to save
 	// some performance by skipping some coordinate space transformations later.
 
+	PRAGMA_DISABLE_DEPRECATION_WARNINGS // UE 5.8 deprecated the UPrimitiveComponent movement-base API; kept for behavior parity.
 	if (MovementBaseUtility::UseRelativeLocation(TargetPrimitive))
+	PRAGMA_ENABLE_DEPRECATION_WARNINGS
 	{
 		const auto TargetRelativeTransform{
 			FTransform{TargetRotation, TargetCapsuleLocation}.GetRelativeTransform(TargetPrimitive->GetComponentTransform())
@@ -479,7 +481,9 @@ void AAlsCharacter::StartMantlingImplementation(const FAlsMantlingParameters& Pa
 	GetCharacterMovement()->SetMovementMode(MOVE_Custom);
 	AlsCharacterMovement->SetMovementModeLocked(true);
 
+	PRAGMA_DISABLE_DEPRECATION_WARNINGS // UE 5.8 deprecated the UPrimitiveComponent movement-base API; kept for behavior parity.
 	GetCharacterMovement()->SetBase(Parameters.TargetPrimitive.Get());
+	PRAGMA_ENABLE_DEPRECATION_WARNINGS
 
 	// Create mantling root motion.
 
@@ -495,7 +499,9 @@ void AAlsCharacter::StartMantlingImplementation(const FAlsMantlingParameters& Pa
 	RootMotionSource->Duration = Duration / PlayRate;
 	RootMotionSource->MontageStartTime = StartTime;
 
+	PRAGMA_DISABLE_DEPRECATION_WARNINGS // UE 5.8 deprecated the UPrimitiveComponent movement-base API; kept for behavior parity.
 	const auto bUseRelativeLocation{MovementBaseUtility::UseRelativeLocation(Parameters.TargetPrimitive.Get())};
+	PRAGMA_ENABLE_DEPRECATION_WARNINGS
 	const FTransform MeshTransform{GetBaseRotationOffset()};
 
 	// Extract the initial root transform, invert it, convert from the mesh space to the actor space, and apply it to the actor's transform.

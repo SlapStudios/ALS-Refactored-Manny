@@ -1,5 +1,6 @@
 #pragma once
 
+#include "AlsCharacter.h"
 #include "Animation/AnimNotifies/AnimNotify.h"
 #include "Engine/DataAsset.h"
 #include "Engine/EngineTypes.h"
@@ -253,4 +254,6 @@ private:
 
 	void SpawnParticleSystem(USkeletalMeshComponent* Mesh, const FAlsFootstepParticleSystemSettings& ParticleSystemSettings,
 	                         const FVector& FootstepLocation, const FQuat& FootstepRotation) const;
+
+	const UAlsFootstepEffectsSettings* ResolveSettings(USkeletalMeshComponent* Mesh) const;
 };

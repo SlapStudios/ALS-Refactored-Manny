@@ -57,6 +57,7 @@ protected:
 	inline static const FName HandRightIkCurve{TEXTVIEW("HandRightIk")};
 	inline static const FName ViewBlockCurve{TEXTVIEW("ViewBlock")};
 	inline static const FName AllowAimingCurve{TEXTVIEW("AllowAiming")};
+	inline static const FName AllowPitchAimingCurve{TEXTVIEW("AllowPitchAiming")};
 	inline static const FName HipsDirectionLockCurve{TEXTVIEW("HipsDirectionLock")};
 
 	// Pose Animation Curves
@@ -221,6 +222,9 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "ALS|Constants|Animation Curves", Meta = (ReturnDisplayName = "Curve Name"))
 	static const FName& AllowAimingCurveName();
+
+	UFUNCTION(BlueprintPure, Category = "ALS|Constants|Animation Curves", Meta = (ReturnDisplayName = "Curve Name"))
+	static const FName& AllowPitchAimingCurveName();
 
 	UFUNCTION(BlueprintPure, Category = "ALS|Constants|Animation Curves", Meta = (ReturnDisplayName = "Curve Name"))
 	static const FName& HipsDirectionLockCurveName();
@@ -504,6 +508,11 @@ inline const FName& UAlsConstants::ViewBlockCurveName()
 inline const FName& UAlsConstants::AllowAimingCurveName()
 {
 	return AllowAimingCurve;
+}
+
+inline const FName& UAlsConstants::AllowPitchAimingCurveName()
+{
+	return AllowPitchAimingCurve;
 }
 
 inline const FName& UAlsConstants::HipsDirectionLockCurveName()
