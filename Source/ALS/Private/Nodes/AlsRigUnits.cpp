@@ -98,6 +98,7 @@ FAlsRigVMFunction_IsGameWorld_Execute()
 #endif
 }
 
+#if WITH_EDITORONLY_DATA
 const TArray<FName>& FAlsRigVMFunction_IsGameWorld::GetControlFlowBlocks_Impl() const
 {
 	static const TArray<FName> Blocks{
@@ -108,3 +109,4 @@ const TArray<FName>& FAlsRigVMFunction_IsGameWorld::GetControlFlowBlocks_Impl() 
 
 	return Blocks;
 }
+#endif

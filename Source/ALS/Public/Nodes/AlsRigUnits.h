@@ -149,5 +149,7 @@ public:
 	// ReSharper disable once CppFunctionIsNotImplemented
 	virtual void Execute() override;
 
+#if WITH_EDITORONLY_DATA
 	virtual const TArray<FName>& GetControlFlowBlocks_Impl() const override;
+#endif
 };
