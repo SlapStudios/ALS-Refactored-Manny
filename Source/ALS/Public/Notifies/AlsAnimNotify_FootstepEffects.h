@@ -31,7 +31,9 @@ UENUM(BlueprintType)
 enum class EAlsFootstepSoundSpawnMode : uint8
 {
 	SpawnAtTraceHitLocation,
-	SpawnAttachedToFootBone
+	SpawnAttachedToFootBone,
+	SpawnAtMeshRoot,
+	SpawnAtRoot
 };
 
 UENUM(BlueprintType)
