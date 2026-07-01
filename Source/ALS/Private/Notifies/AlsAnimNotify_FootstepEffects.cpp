@@ -230,6 +230,18 @@ void UAlsAnimNotify_FootstepEffects::SpawnSound(USkeletalMeshComponent* Mesh, co
 		                                             FRotator::ZeroRotator, EAttachLocation::SnapToTarget,
 		                                             true, VolumeMultiplier, SoundPitchMultiplier);
 	}
+	else if (SoundSettings.SpawnMode == EAlsFootstepSoundSpawnMode::SpawnAtMeshRoot)
+	{
+		Audio = UGameplayStatics::SpawnSoundAttached(SoundSettings.Sound.Get(), Mesh, NAME_None, FVector::ZeroVector,
+													 FRotator::ZeroRotator, EAttachLocation::SnapToTarget,
+													 true, VolumeMultiplier, SoundPitchMultiplier);
+	}
+	else if (SoundSettings.SpawnMode == EAlsFootstepSoundSpawnMode::SpawnAtRoot)
+	{
+		Audio = UGameplayStatics::SpawnSoundAttached(SoundSettings.Sound.Get(), Mesh->GetAttachParent(), NAME_None, FVector::ZeroVector,
+													 FRotator::ZeroRotator, EAttachLocation::SnapToTarget,
+													 true, VolumeMultiplier, SoundPitchMultiplier);
+	}
 
 	if (IsValid(Audio))
 	{
