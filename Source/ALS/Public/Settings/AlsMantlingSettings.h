@@ -47,8 +47,8 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Settings")
 	TObjectPtr<UAnimMontage> Montage;
 
-	// If checked, mantling will automatically calculate the start time based on how much vertical
-	// distance the character needs to move to reach the object they are about to mantle.
+	/// Automatically calculate the start time based on the vertical distance
+	/// the character needs to move to reach the object they are about to mantle.
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Settings", Meta = (ClampMin = 0))
 	uint8 bAutoCalculateStartTime : 1 {false};
 
@@ -58,7 +58,7 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Settings", Meta = (ClampMin = 0, EditCondition = "!bAutoCalculateStartTime"))
 	FVector2f StartTime{0.5f, 0.0f};
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Settings", Meta = (ClampMin = 0, ForceUnits = "t"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Settings", Meta = (ClampMin = 0, ForceUnits = "s"))
 	FFloatInterval MotionWarpingTimeRange{0.0f, 0.3f};
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Settings")
@@ -106,20 +106,24 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ALS")
 	uint8 bAllowMantling : 1 {true};
 
+	/// If checked, the character will automatically try to mantle while in air.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ALS")
+	uint8 bAutoStartMantlingInAir : 1 {true};
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ALS", Meta = (ClampMin = 0, ClampMax = 180, ForceUnits = "deg"))
 	float TraceAngleThreshold{110.0f};
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ALS", Meta = (ClampMin = 0, ClampMax = 180, ForceUnits = "deg"))
 	float MaxReachAngle{50.0f};
 
-	// Prevents mantling on surfaces whose slope angle exceeds this value.
+	/// Prevents mantling on surfaces with a slope angle greater than this value.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ALS", Meta = (ClampMin = 0, ClampMax = 90, ForceUnits = "deg"))
 	float SlopeAngleThreshold{35.0f};
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadWrite, Category = "ALS", AdvancedDisplay, Meta = (ClampMin = 0, ClampMax = 1))
 	float SlopeAngleThresholdCos{FMath::Cos(FMath::DegreesToRadians(35.0f))};
 
-	// If a dynamic object has a speed bigger than this value, then do not start mantling.
+	/// Prevents mantling if the speed of a dynamic object is greater than this value.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ALS", Meta = (ForceUnits = "cm/s"))
 	float TargetPrimitiveSpeedThreshold{10.0f};
 
@@ -144,11 +148,11 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadWrite, Category = "ALS", AdvancedDisplay)
 	FCollisionResponseContainer MantlingTraceResponses{ECR_Ignore};
 
-	// Used when the mantling was interrupted and we need to stop the animation.
+	/// Used when the mantling is interrupted and the animation needs to stop.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ALS", Meta = (ClampMin = 0, ForceUnits = "s"))
 	float BlendOutDuration{0.3f};
 
-	// If checked, ragdolling will start if the object the character is mantling on was destroyed.
+	/// Character will start ragdolling if the object they are mantling on is has been destroyed.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ALS")
 	uint8 bStartRagdollingOnTargetPrimitiveDestruction : 1 {true};
 

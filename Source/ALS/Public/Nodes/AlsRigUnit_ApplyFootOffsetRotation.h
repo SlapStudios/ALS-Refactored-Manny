@@ -19,7 +19,7 @@ public:
 	FQuat FootTargetRotation{ForceInit};
 
 	UPROPERTY(Transient, Meta = (Input))
-	FVector FootOffsetNormal{FVector::ZAxisVector};
+	FVector FootOffsetNormal{FVector::UpVector};
 
 	UPROPERTY(DisplayName = "Swing 1 Limit Angle", Meta = (Input, ClampMin = -180, ClampMax = 180, ForceUnits = "deg"))
 	FFloatInterval Swing1LimitAngle{-20.0f, 40.0f};
@@ -30,7 +30,7 @@ public:
 	UPROPERTY(Meta = (Input, ClampMin = -180, ClampMax = 180, ForceUnits = "deg"))
 	FFloatInterval TwistLimitAngle{0.0f, 0.0f};
 
-	// The lower the value, the faster the interpolation. A zero value results in instant interpolation.
+	/// The lower the value, the faster the interpolation. A zero value means instant interpolation.
 	UPROPERTY(Meta = (Input, ClampMin = 0, ForceUnits = "s"))
 	float OffsetInterpolationHalfLife{0.1f};
 
@@ -44,13 +44,13 @@ public:
 	FCachedRigElement CachedFootItem;
 
 	UPROPERTY(Transient)
-	FVector OffsetNormal{FVector::ZAxisVector};
+	FVector OffsetNormal{FVector::UpVector};
 
 	UPROPERTY(Transient, Meta = (Output))
 	FQuat FootRotation{ForceInit};
 
 	UPROPERTY(Transient)
-	FQuat FootReferenceLocalRotation{ForceInit};
+	FQuat FootInitialRotationCalfSpace{ForceInit};
 
 public:
 	virtual void Initialize() override;

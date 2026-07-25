@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Interfaces/MovementBaseInterface.h"
 #include "AlsMovementBaseState.generated.h"
 
 USTRUCT(BlueprintType)
@@ -7,8 +8,8 @@ struct ALS_API FAlsMovementBaseState
 {
 	GENERATED_BODY()
 
-	UPROPERTY(BlueprintReadWrite, Category = "ALS")
-	TObjectPtr<UPrimitiveComponent> Primitive;
+	UPROPERTY()
+	FMovementBaseInterfaceData MovementBaseInterfaceData;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ALS")
 	FName BoneName;

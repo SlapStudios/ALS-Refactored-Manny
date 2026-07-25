@@ -118,8 +118,8 @@ class ALS_API UAlsCharacterMovementComponent : public UCharacterMovementComponen
 	friend FAlsSavedMove;
 
 public:
-	// If checked, improves the response to interaction from moving kinematic physical
-	// bodies, but may cause some issues when interacting with simulated physical bodies.
+	/// While this improves the response to interactions with moving kinematic physical
+	/// bodies, it may cause some issues when interacting with simulated bodies.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Settings")
 	uint8 bAllowImprovedPenetrationAdjustment : 1 {true};
 
@@ -150,11 +150,11 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "State", Transient)
 	uint8 bMovementModeLocked : 1 {false};
 
-	// Used to temporarily prohibit the player from moving the character. Also works for AI-controlled characters.
+	/// Temporarily prevents the player from moving their character. This also works for AI-controlled characters.
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "State", Transient)
 	uint8 bInputBlocked : 1 {false};
 
-	// Valid only on locally controlled characters.
+	/// Valid only for locally controlled characters.
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "State", Transient)
 	FRotator PreviousControlRotation{ForceInit};
 
@@ -258,20 +258,20 @@ public:
 	bool IsCustomMovementMode(ECustomMovementMode InCustomMovementMode) const;
 
 public:
-	const FGameplayTag& GetRotationMode() const;
+	FGameplayTag GetRotationMode() const;
 
-	void SetRotationMode(const FGameplayTag& NewRotationMode);
+	void SetRotationMode(FGameplayTag NewRotationMode);
 
-	const FGameplayTag& GetStance() const;
+	FGameplayTag GetStance() const;
 
-	void SetStance(const FGameplayTag& NewStance);
+	void SetStance(FGameplayTag NewStance);
 
-	const FGameplayTag& GetMaxAllowedGait() const;
+	FGameplayTag GetMaxAllowedGait() const;
 
-	void SetMaxAllowedGait(const FGameplayTag& NewMaxAllowedGait);
+	void SetMaxAllowedGait(FGameplayTag NewMaxAllowedGait);
 
-	// Returns the character's current speed, mapped to the speed ranges from the movement settings.
-	// Varies from 0 to 3, where 0 is stopped, 1 is walking, 2 is running, and 3 is sprinting.
+	/// Returns the current speed of the character, mapped to the speed ranges specified in the movement settings.
+	/// The value can range from 0 to 3, where 0 is standing still, 1 is walking, 2 is running, and 3 is sprinting.
 	float GetGaitAmount() const;
 
 protected:
@@ -422,22 +422,22 @@ inline const FAlsMovementGaitSettings& UAlsCharacterMovementComponent::GetGaitSe
 	return GaitSettings;
 }
 
-inline const FGameplayTag& UAlsCharacterMovementComponent::GetRotationMode() const
+inline FGameplayTag UAlsCharacterMovementComponent::GetRotationMode() const
 {
 	return RotationMode;
 }
 
-inline const FGameplayTag& UAlsCharacterMovementComponent::GetStance() const
+inline FGameplayTag UAlsCharacterMovementComponent::GetStance() const
 {
 	return Stance;
 }
 
-inline const FGameplayTag& UAlsCharacterMovementComponent::GetMaxAllowedGait() const
+inline FGameplayTag UAlsCharacterMovementComponent::GetMaxAllowedGait() const
 {
 	return MaxAllowedGait;
 }
 
-inline void UAlsCharacterMovementComponent::SetMaxAllowedGait(const FGameplayTag& NewMaxAllowedGait)
+inline void UAlsCharacterMovementComponent::SetMaxAllowedGait(FGameplayTag NewMaxAllowedGait)
 {
 	MaxAllowedGait = NewMaxAllowedGait;
 }

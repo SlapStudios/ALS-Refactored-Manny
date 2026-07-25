@@ -38,7 +38,7 @@ FTransform UAlsMontageUtility::ExtractRootTransformFromMontage(const UAnimMontag
 		return FTransform::Identity;
 	}
 
-	const FAnimExtractContext ExtractionContext{static_cast<double>(Segment->ConvertTrackPosToAnimPos(Time))};
+	const FAnimExtractContext ExtractionContext{Segment->ConvertTrackPosToAnimPos(Time)};
 	return Sequence->ExtractRootTrackTransform(ExtractionContext, nullptr);
 }
 
@@ -60,7 +60,7 @@ FTransform UAlsMontageUtility::ExtractLastRootTransformFromMontage(const UAnimMo
 		return FTransform::Identity;
 	}
 
-	const FAnimExtractContext ExtractionContext{static_cast<double>(Segment.GetEndPos())};
+	const FAnimExtractContext ExtractionContext{Segment.GetEndPos()};
 	return Sequence->ExtractRootTrackTransform(ExtractionContext, nullptr);
 }
 
@@ -93,7 +93,7 @@ FTransform UAlsMontageUtility::ExtractRootMotionFromMontage(const UAnimMontage* 
 	return RootMotionAccumulator.GetRootMotionTransform();
 }
 
-void UAlsMontageUtility::StopMontagesWithSlot(UAnimInstance* AnimationInstance, const FName& SlotName, const float BlendOutDuration)
+void UAlsMontageUtility::StopMontagesWithSlot(UAnimInstance* AnimationInstance, const FName SlotName, const float BlendOutDuration)
 {
 	if (!ALS_ENSURE(IsValid(AnimationInstance)) || !ALS_ENSURE(!SlotName.IsNone()))
 	{

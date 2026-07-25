@@ -10,8 +10,11 @@
 #define ALS_GET_TYPE_STRING(Type) \
 	((void) sizeof UEAsserts_Private::GetMemberNameCheckedJunk(static_cast<Type*>(nullptr)), TEXTVIEW(#Type))
 
-// A lightweight version of the ensure() macro that doesn't generate a C++ call stack and doesn't send a
-// crash report, because it doesn't happen instantly and causes the editor to freeze, which can be annoying.
+#define ALS_GET_TYPE_STRING_ANSI(Type) \
+	((void) sizeof UEAsserts_Private::GetMemberNameCheckedJunk(static_cast<Type*>(nullptr)), ANSITEXTVIEW(#Type))
+
+/// Lightweight version of the ensure() macro. It doesn't generate a C++ call stack or send a crash report
+/// because those things do not happen instantly and cause the editor to freeze, which can be annoying.
 
 #if DO_ENSURE && !USING_CODE_ANALYSIS
 
@@ -28,8 +31,7 @@ namespace AlsEnsure
 		uint8 bEnsureAlways : 1 {false};
 	};
 
-	ALS_API bool UE_COLD UE_DEBUG_SECTION VARARGS
-	Execute(std::atomic<uint8>& bExecuted, const FAlsEnsureInfo& EnsureInfo);
+	ALS_API bool UE_COLD UE_DEBUG_SECTION Execute(std::atomic<uint8>& bExecuted, const FAlsEnsureInfo& EnsureInfo);
 
 	ALS_API bool UE_COLD UE_DEBUG_SECTION VARARGS
 	ExecuteFormat(std::atomic<uint8>& bExecuted, const FAlsEnsureInfo& EnsureInfo, const TCHAR* Format, ...);

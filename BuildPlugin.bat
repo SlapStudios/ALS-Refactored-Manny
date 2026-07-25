@@ -2,8 +2,8 @@
 
 title Build Plugin
 
-set SourceBuildVersion=5.7
-set InstalledBuildVersion=5.7
+set SourceBuildVersion=5.8
+set InstalledBuildVersion=5.8
 
 for /f "skip=2 tokens=2*" %%a in ('reg query "HKEY_CURRENT_USER\Software\Epic Games\Unreal Engine\Builds" /v "%SourceBuildVersion%"') do (
     set EngineDirectory=%%b
@@ -34,8 +34,8 @@ if "%EngineDirectory%" == "" (
 )
 
 set AutomationToolPath=%EngineDirectory%\Engine\Build\BatchFiles\RunUAT.bat
-set PluginPath=%cd%\ALS.uplugin
-set OutputPath=%cd%\Build
+set PluginPath=%~dp0ALS.uplugin
+set OutputPath=%~dp0Build
 
 echo Automation Tool Path: %AutomationToolPath%
 echo:
