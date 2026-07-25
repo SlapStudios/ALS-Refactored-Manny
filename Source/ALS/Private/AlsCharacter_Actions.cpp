@@ -835,17 +835,25 @@ void AAlsCharacter::OnRagdollingStarted_Implementation() {}
 
 void AAlsCharacter::SetRagdollTargetLocation(const FVector& NewTargetLocation)
 {
-	if (!bReplicateRagdoll) return;
-
 	if (RagdollTargetLocation != NewTargetLocation)
 	{
+		// RagdollTargetLocation e DUPLO PROPOSITO: alem de ser replicado, e a
+		// fonte da verdade LOCAL que a capsula, a camera e o RagdollTraceGround
+		// seguem. Por isso ele precisa ser escrito SEMPRE, mesmo com o ragdoll
+		// nao-replicado — senao fica em ZeroVector, o RagdollTraceGround cai no
+		// GetActorLocation() (a capsula congelada onde o ragdoll comecou) e a
+		// capsula/camera nunca acompanham o corpo, alem de o get-up nunca achar
+		// chao. So a REPLICACAO abaixo e que fica atras do bReplicateRagdoll.
 		RagdollTargetLocation = NewTargetLocation;
 
-		MARK_PROPERTY_DIRTY_FROM_NAME(ThisClass, RagdollTargetLocation, this)
-
-		if (GetLocalRole() == ROLE_AutonomousProxy)
+		if (bReplicateRagdoll)
 		{
-			ServerSetRagdollTargetLocation(RagdollTargetLocation);
+			MARK_PROPERTY_DIRTY_FROM_NAME(ThisClass, RagdollTargetLocation, this)
+
+			if (GetLocalRole() == ROLE_AutonomousProxy)
+			{
+				ServerSetRagdollTargetLocation(RagdollTargetLocation);
+			}
 		}
 	}
 }
