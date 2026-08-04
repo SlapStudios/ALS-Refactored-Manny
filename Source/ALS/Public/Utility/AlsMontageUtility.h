@@ -3,26 +3,32 @@
 #include "Kismet/BlueprintFunctionLibrary.h"
 #include "AlsMontageUtility.generated.h"
 
+class UAnimMontage;
+class UAnimInstance;
+
 UCLASS()
 class ALS_API UAlsMontageUtility : public UBlueprintFunctionLibrary
 {
 	GENERATED_BODY()
 
 public:
+	/// This function returns a transform in component space.
 	UFUNCTION(BlueprintPure, Category = "ALS|Montage Utility", Meta = (ReturnDisplayName = "Transform"))
 	static FTransform ExtractRootTransformFromMontage(const UAnimMontage* Montage, float Time);
 
+	/// This function returns a transform in component space.
 	UFUNCTION(BlueprintPure, Category = "ALS|Montage Utility", Meta = (ReturnDisplayName = "Transform"))
 	static FTransform ExtractLastRootTransformFromMontage(const UAnimMontage* Montage);
 
+	/// This function returns a transform in component space.
 	UFUNCTION(BlueprintPure, Category = "ALS|Montage Utility", Meta = (ReturnDisplayName = "Transform"))
 	static FTransform ExtractRootMotionFromMontage(const UAnimMontage* Montage, float StartTime, float EndTime);
 
-	// Stops all active animation montages that use the specified slot.
+	/// Stops all active animation montages that use the specified slot.
 	UFUNCTION(BlueprintCallable, Category = "ALS|Montage Utility")
-	static void StopMontagesWithSlot(UAnimInstance* AnimationInstance, const FName& SlotName, float BlendOutDuration = -1.0f);
+	static void StopMontagesWithSlot(UAnimInstance* AnimationInstance, FName SlotName, float BlendOutDuration = -1.0f);
 
-	// Stops all active animation montages that share at least one slot with the reference montage.
+	/// Stops all active animation montages that share at least one slot with the reference montage.
 	UFUNCTION(BlueprintCallable, Category = "ALS|Montage Utility")
 	static void StopMontagesWithAnySharedSlots(UAnimInstance* AnimationInstance, const UAnimMontage* ReferenceMontage,
 	                                           float BlendOutDuration = -1.0f);

@@ -79,11 +79,10 @@ void UAlsCameraComponent::TickComponent(float DeltaTime, const ELevelTick TickTy
 {
 	if (IsValid(Settings) && Settings->bIgnoreTimeDilation)
 	{
-		// Use the previous global time dilation, as this frame's delta time may not yet be affected
-		// by the current global time dilation, and thus unscaling will produce the wrong delta time.
+		// Use the previous global time dilation because this frame's delta time may not yet be affected
+		// by the current global time dilation, so unscaling it would produce an incorrect result.
 
 		const auto TimeDilation{PreviousGlobalTimeDilation * GetOwner()->CustomTimeDilation};
-
 		DeltaTime = TimeDilation > UE_SMALL_NUMBER ? DeltaTime / TimeDilation : GetWorld()->DeltaRealTimeSeconds;
 	}
 
@@ -190,24 +189,23 @@ void UAlsCameraComponent::TickCamera(const float DeltaTime, bool bAllowLag)
 		                                              MovementBaseLocation, MovementBaseRotation);
 	}
 
-	auto* const MovementBaseComponent{Cast<UPrimitiveComponent>(BasedMovement.MovementBaseInterfaceData.GetMovementBaseObject())};
-
-	if (MovementBaseComponent != MovementBasePrimitive || BasedMovement.BoneName != MovementBaseBoneName)
+	if (BasedMovement.MovementBaseInterfaceData != MovementBaseInterfaceData ||
+	    BasedMovement.BoneName != MovementBaseBoneName)
 	{
-		MovementBasePrimitive = MovementBaseComponent;
+		MovementBaseInterfaceData = BasedMovement.MovementBaseInterfaceData;
 		MovementBaseBoneName = BasedMovement.BoneName;
 
 		if (bMovementBaseHasRelativeRotation)
 		{
 			const auto MovementBaseRotationInverse{MovementBaseRotation.Inverse()};
 
-			PivotMovementBaseRelativeLagLocation = MovementBaseRotationInverse.RotateVector(PivotLagLocation - MovementBaseLocation);
-			CameraMovementBaseRelativeRotation = MovementBaseRotationInverse * CameraRotation.Quaternion();
+			PivotLagLocationMovementBaseSpace = MovementBaseRotationInverse.RotateVector(PivotLagLocation - MovementBaseLocation);
+			CameraRotationMovementBaseSpace = MovementBaseRotationInverse * CameraRotation.Quaternion();
 		}
 		else
 		{
-			PivotMovementBaseRelativeLagLocation = FVector::ZeroVector;
-			CameraMovementBaseRelativeRotation = FQuat::Identity;
+			PivotLagLocationMovementBaseSpace = FVector::ZeroVector;
+			CameraRotationMovementBaseSpace = FQuat::Identity;
 		}
 	}
 
@@ -245,18 +243,18 @@ void UAlsCameraComponent::TickCamera(const float DeltaTime, bool bAllowLag)
 
 	if (bMovementBaseHasRelativeRotation)
 	{
-		CameraRotation = (MovementBaseRotation * CameraMovementBaseRelativeRotation).Rotator();
+		CameraRotation = (MovementBaseRotation * CameraRotationMovementBaseSpace).Rotator();
 
 		CameraRotation = CalculateCameraRotation(CameraTargetRotation, DeltaTime, bAllowLag);
 
-		CameraMovementBaseRelativeRotation = MovementBaseRotation.Inverse() * CameraRotation.Quaternion();
+		CameraRotationMovementBaseSpace = MovementBaseRotation.Inverse() * CameraRotation.Quaternion();
 	}
 	else
 	{
 		CameraRotation = CalculateCameraRotation(CameraTargetRotation, DeltaTime, bAllowLag);
 	}
 
-	const FQuat CameraYawRotation{FVector::ZAxisVector, FMath::DegreesToRadians(CameraRotation.Yaw)};
+	const FQuat CameraYawRotation{FVector::UpVector, FMath::DegreesToRadians(CameraRotation.Yaw)};
 
 #if ENABLE_DRAW_DEBUG
 	if (bDisplayDebugCameraShapes)
@@ -269,11 +267,11 @@ void UAlsCameraComponent::TickCamera(const float DeltaTime, bool bAllowLag)
 
 	if (bMovementBaseHasRelativeRotation)
 	{
-		PivotLagLocation = MovementBaseLocation + MovementBaseRotation.RotateVector(PivotMovementBaseRelativeLagLocation);
+		PivotLagLocation = MovementBaseLocation + MovementBaseRotation.RotateVector(PivotLagLocationMovementBaseSpace);
 
 		PivotLagLocation = CalculatePivotLagLocation(CameraYawRotation, DeltaTime, bAllowLag);
 
-		PivotMovementBaseRelativeLagLocation = MovementBaseRotation.UnrotateVector(PivotLagLocation - MovementBaseLocation);
+		PivotLagLocationMovementBaseSpace = MovementBaseRotation.UnrotateVector(PivotLagLocation - MovementBaseLocation);
 	}
 	else
 	{
@@ -357,17 +355,17 @@ FVector UAlsCameraComponent::CalculatePivotLagLocation(const FQuat& CameraYawRot
 		return PivotTargetLocation;
 	}
 
-	const auto RelativePivotInitialLagLocation{CameraYawRotation.UnrotateVector(PivotLagLocation)};
-	const auto RelativePivotTargetLocation{CameraYawRotation.UnrotateVector(PivotTargetLocation)};
+	const auto PivotLagLocationCameraSpace{CameraYawRotation.UnrotateVector(PivotLagLocation)};
+	const auto PivotTargetLocationCameraSpace{CameraYawRotation.UnrotateVector(PivotTargetLocation)};
 
 	const auto LocationLagX{GetAnimInstance()->GetCurveValue(UAlsCameraConstants::LocationLagXCurveName())};
 	const auto LocationLagY{GetAnimInstance()->GetCurveValue(UAlsCameraConstants::LocationLagYCurveName())};
 	const auto LocationLagZ{GetAnimInstance()->GetCurveValue(UAlsCameraConstants::LocationLagZCurveName())};
 
 	return CameraYawRotation.RotateVector({
-		UAlsMath::DamperExact(RelativePivotInitialLagLocation.X, RelativePivotTargetLocation.X, DeltaTime, LocationLagX),
-		UAlsMath::DamperExact(RelativePivotInitialLagLocation.Y, RelativePivotTargetLocation.Y, DeltaTime, LocationLagY),
-		UAlsMath::DamperExact(RelativePivotInitialLagLocation.Z, RelativePivotTargetLocation.Z, DeltaTime, LocationLagZ)
+		UAlsMath::DamperExact(PivotLagLocationCameraSpace.X, PivotTargetLocationCameraSpace.X, DeltaTime, LocationLagX),
+		UAlsMath::DamperExact(PivotLagLocationCameraSpace.Y, PivotTargetLocationCameraSpace.Y, DeltaTime, LocationLagY),
+		UAlsMath::DamperExact(PivotLagLocationCameraSpace.Z, PivotTargetLocationCameraSpace.Z, DeltaTime, LocationLagZ)
 	});
 }
 
@@ -409,7 +407,7 @@ FVector UAlsCameraComponent::CalculateCameraTrace(const FVector& CameraTargetLoc
 
 	const auto MeshScale{UE_REAL_TO_FLOAT(Character->GetMesh()->GetComponentScale().Z)};
 
-	static const FName MainTraceTag{FString::Printf(TEXT("%hs (Main Trace)"), __FUNCTION__)};
+	static const FName MainTraceTag{TStringView{FAnsiString::Printf("%s (Main Trace)", __FUNCTION__)}};
 
 	auto TraceStart{
 		FMath::Lerp(
@@ -433,7 +431,7 @@ FVector UAlsCameraComponent::CalculateCameraTrace(const FVector& CameraTargetLoc
 		}
 		else if (TryAdjustLocationBlockedByGeometry(TraceStart, bDisplayDebugCameraTraces))
 		{
-			static const FName AdjustedTraceTag{FString::Printf(TEXT("%hs (Adjusted Trace)"), __FUNCTION__)};
+			static const FName AdjustedTraceTag{TStringView{FAnsiString::Printf("%s (Adjusted Trace)", __FUNCTION__)}};
 
 			GetWorld()->SweepSingleByChannel(Hit, TraceStart, TraceEnd, FQuat::Identity, Settings->ThirdPerson.TraceChannel,
 			                                 CollisionShape, {AdjustedTraceTag, false, GetOwner()});
@@ -481,7 +479,8 @@ FVector UAlsCameraComponent::CalculateCameraTrace(const FVector& CameraTargetLoc
 		                        : UAlsMath::DamperExact(TraceDistanceRatio, TargetTraceDistanceRatio, DeltaTime,
 		                                                Settings->ThirdPerson.TraceDistanceSmoothing.InterpolationHalfLife);
 
-	return TraceStart + TraceVector * TraceDistanceRatio;
+	TraceResult = TraceStart + TraceVector * TraceDistanceRatio;
+	return TraceResult;
 }
 
 bool UAlsCameraComponent::TryAdjustLocationBlockedByGeometry(FVector& Location, const bool bDisplayDebugCameraTraces) const
@@ -499,7 +498,7 @@ bool UAlsCameraComponent::TryAdjustLocationBlockedByGeometry(FVector& Location, 
 		Overlaps.Reset();
 	};
 
-	static const FName OverlapMultiTraceTag{FString::Printf(TEXT("%hs (Overlap Multi)"), __FUNCTION__)};
+	static const FName OverlapMultiTraceTag{TStringView{FAnsiString::Printf("%s (Overlap Multi)", __FUNCTION__)}};
 
 	if (!GetWorld()->OverlapMultiByChannel(Overlaps, Location, FQuat::Identity, Settings->ThirdPerson.TraceChannel,
 	                                       CollisionShape, {OverlapMultiTraceTag, false, GetOwner()}))
@@ -558,7 +557,7 @@ bool UAlsCameraComponent::TryAdjustLocationBlockedByGeometry(FVector& Location, 
 
 	Location += Adjustment;
 
-	static const FName FreeSpaceTraceTag{FString::Printf(TEXT("%hs (Free Space Overlap)"), __FUNCTION__)};
+	static const FName FreeSpaceTraceTag{TStringView{FAnsiString::Printf("%s (Free Space Overlap)", __FUNCTION__)}};
 
 	return !GetWorld()->OverlapBlockingTestByChannel(Location, FQuat::Identity, Settings->ThirdPerson.TraceChannel,
 	                                                 FCollisionShape::MakeSphere(Settings->ThirdPerson.TraceRadius * MeshScale),

@@ -32,7 +32,7 @@ void UAlsCameraComponent::DisplayDebug(const UCanvas* Canvas, const FDebugDispla
 
 	const auto InitialVerticalLocation{VerticalLocation};
 
-	static const auto CameraCurvesHeaderText{FText::AsCultureInvariant(FString{TEXTVIEW("Als.CameraCurves (Shift + 6)")})};
+	static const auto CameraCurvesHeaderText{INVTEXT("Als.CameraCurves (Shift + 6)")};
 
 	if (DisplayInfo.IsDisplayOn(UAlsCameraConstants::CameraCurvesDebugDisplayName()))
 	{
@@ -52,7 +52,7 @@ void UAlsCameraComponent::DisplayDebug(const UCanvas* Canvas, const FDebugDispla
 
 	MaxVerticalLocation = FMath::Max(MaxVerticalLocation, VerticalLocation);
 
-	static const auto ShapesHeaderText{FText::AsCultureInvariant(FString{TEXTVIEW("Als.CameraShapes (Shift + 7)")})};
+	static const auto ShapesHeaderText{INVTEXT("Als.CameraShapes (Shift + 7)")};
 
 	if (DisplayInfo.IsDisplayOn(UAlsCameraConstants::CameraShapesDebugDisplayName()))
 	{
@@ -67,7 +67,7 @@ void UAlsCameraComponent::DisplayDebug(const UCanvas* Canvas, const FDebugDispla
 	VerticalLocation += RowOffset;
 	MaxVerticalLocation = FMath::Max(MaxVerticalLocation, VerticalLocation);
 
-	static const auto TracesHeaderText{FText::AsCultureInvariant(FString{TEXTVIEW("Als.CameraTraces (Shift + 8)")})};
+	static const auto TracesHeaderText{INVTEXT("Als.CameraTraces (Shift + 8)")};
 
 	if (DisplayInfo.IsDisplayOn(UAlsCameraConstants::CameraTracesDebugDisplayName()))
 	{
@@ -85,7 +85,7 @@ void UAlsCameraComponent::DisplayDebug(const UCanvas* Canvas, const FDebugDispla
 	VerticalLocation = MaxVerticalLocation;
 }
 
-void UAlsCameraComponent::DisplayDebugHeader(const UCanvas* Canvas, const FText& HeaderText, const FLinearColor& HeaderColor,
+void UAlsCameraComponent::DisplayDebugHeader(const UCanvas* Canvas, const FText& HeaderText, const FLinearColor HeaderColor,
                                              const float Scale, const float HorizontalLocation, float& VerticalLocation)
 {
 	FCanvasTextItem Text{
@@ -124,7 +124,7 @@ void UAlsCameraComponent::DisplayDebugCurves(const UCanvas* Canvas, const float 
 	TArray<FName> CurveNames;
 	GetAnimInstance()->GetAllCurveNames(CurveNames);
 
-	CurveNames.Sort([](const FName& A, const FName& B)
+	CurveNames.Sort([](const FName A, const FName B)
 	{
 		return A.LexicalLess(B);
 	});
@@ -142,7 +142,7 @@ void UAlsCameraComponent::DisplayDebugCurves(const UCanvas* Canvas, const float 
 
 		CurveValueBuilder.Appendf(TEXT("%.2f"), CurveValue);
 
-		Text.Text = FText::AsCultureInvariant(FString{CurveValueBuilder});
+		Text.Text = FText::AsCultureInvariant(CurveValueBuilder);
 		Text.Draw(Canvas->Canvas, {HorizontalLocation + ColumnOffset, VerticalLocation});
 
 		CurveValueBuilder.Reset();
@@ -173,7 +173,7 @@ void UAlsCameraComponent::DisplayDebugShapes(const UCanvas* Canvas, const float 
 
 	static const auto PivotTargetLocationText{
 		FText::AsCultureInvariant(FName::NameToDisplayString(
-			FString{GET_MEMBER_NAME_STRING_VIEW_CHECKED(ThisClass, PivotTargetLocation)}, false))
+			FString{GET_MEMBER_NAME_ANSI_STRING_VIEW_CHECKED(ThisClass, PivotTargetLocation)}, false))
 	};
 
 	auto Color{FLinearColor::Green};
@@ -182,14 +182,14 @@ void UAlsCameraComponent::DisplayDebugShapes(const UCanvas* Canvas, const float 
 	Text.Text = PivotTargetLocationText;
 	Text.Draw(Canvas->Canvas, {HorizontalLocation, VerticalLocation});
 
-	DebugStringBuilder << TEXTVIEW("X: ");
+	DebugStringBuilder << ANSITEXTVIEW("X: ");
 	DebugStringBuilder.Appendf(TEXT("%.2f"), PivotTargetLocation.X);
-	DebugStringBuilder << TEXTVIEW("Y: ");
+	DebugStringBuilder << ANSITEXTVIEW("Y: ");
 	DebugStringBuilder.Appendf(TEXT("%.2f"), PivotTargetLocation.Y);
-	DebugStringBuilder << TEXTVIEW("Z: ");
+	DebugStringBuilder << ANSITEXTVIEW("Z: ");
 	DebugStringBuilder.Appendf(TEXT("%.2f"), PivotTargetLocation.Z);
 
-	Text.Text = FText::AsCultureInvariant(FString{DebugStringBuilder});
+	Text.Text = FText::AsCultureInvariant(DebugStringBuilder);
 	Text.Draw(Canvas->Canvas, {HorizontalLocation + ColumnOffset, VerticalLocation});
 
 	DebugStringBuilder.Reset();
@@ -198,7 +198,7 @@ void UAlsCameraComponent::DisplayDebugShapes(const UCanvas* Canvas, const float 
 
 	static const auto PivotLagLocationText{
 		FText::AsCultureInvariant(FName::NameToDisplayString(
-			FString{GET_MEMBER_NAME_STRING_VIEW_CHECKED(ThisClass, PivotLagLocation)}, false))
+			FString{GET_MEMBER_NAME_ANSI_STRING_VIEW_CHECKED(ThisClass, PivotLagLocation)}, false))
 	};
 
 	Color = {1.0f, 0.5f, 0.0f};
@@ -207,14 +207,14 @@ void UAlsCameraComponent::DisplayDebugShapes(const UCanvas* Canvas, const float 
 	Text.Text = PivotLagLocationText;
 	Text.Draw(Canvas->Canvas, {HorizontalLocation, VerticalLocation});
 
-	DebugStringBuilder << TEXTVIEW("X: ");
+	DebugStringBuilder << ANSITEXTVIEW("X: ");
 	DebugStringBuilder.Appendf(TEXT("%.2f"), PivotLagLocation.X);
-	DebugStringBuilder << TEXTVIEW("Y: ");
+	DebugStringBuilder << ANSITEXTVIEW("Y: ");
 	DebugStringBuilder.Appendf(TEXT("%.2f"), PivotLagLocation.Y);
-	DebugStringBuilder << TEXTVIEW("Z: ");
+	DebugStringBuilder << ANSITEXTVIEW("Z: ");
 	DebugStringBuilder.Appendf(TEXT("%.2f"), PivotLagLocation.Z);
 
-	Text.Text = FText::AsCultureInvariant(FString{DebugStringBuilder});
+	Text.Text = FText::AsCultureInvariant(DebugStringBuilder);
 	Text.Draw(Canvas->Canvas, {HorizontalLocation + ColumnOffset, VerticalLocation});
 
 	DebugStringBuilder.Reset();
@@ -223,7 +223,7 @@ void UAlsCameraComponent::DisplayDebugShapes(const UCanvas* Canvas, const float 
 
 	static const auto PivotLocationText{
 		FText::AsCultureInvariant(FName::NameToDisplayString(
-			FString{GET_MEMBER_NAME_STRING_VIEW_CHECKED(ThisClass, PivotLocation)}, false))
+			FString{GET_MEMBER_NAME_ANSI_STRING_VIEW_CHECKED(ThisClass, PivotLocation)}, false))
 	};
 
 	Color = {0.0f, 0.75f, 1.0f};
@@ -232,14 +232,14 @@ void UAlsCameraComponent::DisplayDebugShapes(const UCanvas* Canvas, const float 
 	Text.Text = PivotLocationText;
 	Text.Draw(Canvas->Canvas, {HorizontalLocation, VerticalLocation});
 
-	DebugStringBuilder << TEXTVIEW("X: ");
+	DebugStringBuilder << ANSITEXTVIEW("X: ");
 	DebugStringBuilder.Appendf(TEXT("%.2f"), PivotLocation.X);
-	DebugStringBuilder << TEXTVIEW("Y: ");
+	DebugStringBuilder << ANSITEXTVIEW("Y: ");
 	DebugStringBuilder.Appendf(TEXT("%.2f"), PivotLocation.Y);
-	DebugStringBuilder << TEXTVIEW("Z: ");
+	DebugStringBuilder << ANSITEXTVIEW("Z: ");
 	DebugStringBuilder.Appendf(TEXT("%.2f"), PivotLocation.Z);
 
-	Text.Text = FText::AsCultureInvariant(FString{DebugStringBuilder});
+	Text.Text = FText::AsCultureInvariant(DebugStringBuilder);
 	Text.Draw(Canvas->Canvas, {HorizontalLocation + ColumnOffset, VerticalLocation});
 
 	DebugStringBuilder.Reset();
@@ -248,7 +248,7 @@ void UAlsCameraComponent::DisplayDebugShapes(const UCanvas* Canvas, const float 
 
 	static const auto CameraFieldOfViewText{
 		FText::AsCultureInvariant(FName::NameToDisplayString(
-			FString{GET_MEMBER_NAME_STRING_VIEW_CHECKED(ThisClass, CameraFieldOfView)}, false))
+			FString{GET_MEMBER_NAME_ANSI_STRING_VIEW_CHECKED(ThisClass, CameraFieldOfView)}, false))
 	};
 
 	Color = FLinearColor::White;
@@ -259,7 +259,7 @@ void UAlsCameraComponent::DisplayDebugShapes(const UCanvas* Canvas, const float 
 
 	DebugStringBuilder.Appendf(TEXT("%.2f"), CameraFieldOfView);
 
-	Text.Text = FText::AsCultureInvariant(FString{DebugStringBuilder});
+	Text.Text = FText::AsCultureInvariant(DebugStringBuilder);
 	Text.Draw(Canvas->Canvas, {HorizontalLocation + ColumnOffset, VerticalLocation});
 
 	DebugStringBuilder.Reset();
@@ -268,7 +268,7 @@ void UAlsCameraComponent::DisplayDebugShapes(const UCanvas* Canvas, const float 
 
 	static const auto RightShoulderText{
 		FText::AsCultureInvariant(FName::NameToDisplayString(
-			FString{GET_MEMBER_NAME_STRING_VIEW_CHECKED(ThisClass, bRightShoulder)}, true))
+			FString{GET_MEMBER_NAME_ANSI_STRING_VIEW_CHECKED(ThisClass, bRightShoulder)}, true))
 	};
 
 	Text.Text = RightShoulderText;

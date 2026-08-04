@@ -5,7 +5,7 @@
 #if WITH_EDITOR
 void FAlsInAirSettings::PostEditChangeProperty(const FPropertyChangedEvent& ChangedEvent)
 {
-	if (ChangedEvent.GetPropertyName() == GET_MEMBER_NAME_STRING_VIEW_CHECKED(FAlsInAirSettings, GroundPredictionResponseChannels))
+	if (ChangedEvent.GetPropertyName() == GET_MEMBER_NAME_ANSI_STRING_VIEW_CHECKED(FAlsInAirSettings, GroundPredictionResponseChannels))
 	{
 		GroundPredictionSweepResponses.SetAllChannels(ECR_Ignore);
 

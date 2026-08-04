@@ -77,15 +77,14 @@ void FAlsRootMotionSource_Mantling::PrepareRootMotion(const float SimulationDelt
 		                                                MantlingSettings->MotionWarpingRotationCustomBlendCurve)
 	};
 
-	// Calculate the start and target transforms based on the stored relative transforms to follow moving objects.
-
 	FTransform StartTransform{StartRotation, StartLocation};
 	FTransform TargetTransform{TargetRotation, TargetLocation};
 
-	PRAGMA_DISABLE_DEPRECATION_WARNINGS // UE 5.8 deprecated the UPrimitiveComponent movement-base API; kept for behavior parity.
-	if (MovementBaseUtility::UseRelativeLocation(TargetPrimitive.Get()))
-	PRAGMA_ENABLE_DEPRECATION_WARNINGS
+	FMovementBaseInterfaceData MovementBaseData{TargetPrimitive.Get()};
+	if (MovementBaseUtility::UseRelativeLocation(&MovementBaseData))
 	{
+		// Convert the start and target transforms from target primitive space to world space.
+
 		StartTransform *= TargetPrimitive->GetComponentTransform();
 		StartTransform.SetScale3D(FVector::OneVector);
 
@@ -93,7 +92,7 @@ void FAlsRootMotionSource_Mantling::PrepareRootMotion(const float SimulationDelt
 		TargetTransform.SetScale3D(FVector::OneVector);
 	}
 
-	// Interpolate the start and target transform to obtain the warped transform.
+	// Interpolate the start and target transforms to obtain the warped transform.
 
 	const auto WarpLocation{FMath::Lerp(StartTransform.GetLocation(), TargetTransform.GetLocation(), LocationWarpAmount)};
 
@@ -106,7 +105,7 @@ void FAlsRootMotionSource_Mantling::PrepareRootMotion(const float SimulationDelt
 
 	const FTransform WarpTransform{WarpRotation, WarpLocation};
 
-	// Extract the current root transform, convert from the mesh space to the actor space.
+	// Extract the current root transform and convert it from component space to actor space.
 
 	auto RootTransform{UAlsMontageUtility::ExtractRootTransformFromMontage(Montage, MontageTime)};
 	RootTransform.SetScale3D(FVector::OneVector);
@@ -167,7 +166,7 @@ UScriptStruct* FAlsRootMotionSource_Mantling::GetScriptStruct() const
 FString FAlsRootMotionSource_Mantling::ToSimpleString() const
 {
 	TStringBuilder<256> StringBuilder{
-		InPlace, ALS_GET_TYPE_STRING(FAlsRootMotionSource_Mantling), TEXTVIEW(" ("), InstanceName, TEXTVIEW(", "), LocalID, TEXT(')')
+		InPlace, ALS_GET_TYPE_STRING_ANSI(FAlsRootMotionSource_Mantling), ANSITEXTVIEW(" ("), InstanceName, ANSITEXTVIEW(", "), LocalID, ')'
 	};
 
 	return FString{StringBuilder};

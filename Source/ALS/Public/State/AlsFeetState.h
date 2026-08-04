@@ -11,31 +11,31 @@ struct ALS_API FAlsFootState
 	float LockAmount{0.0f};
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ALS")
-	FVector3f ThighAxis{ForceInit};
+	FVector3f ThighAxisPelvisSpace{ForceInit};
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ALS")
-	FVector TargetLocation{ForceInit};
+	FVector TargetLocationWorldSpace{ForceInit};
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ALS")
-	FQuat TargetRotation{ForceInit};
+	FQuat TargetRotationWorldSpace{ForceInit};
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ALS")
-	FVector LockLocation{ForceInit};
+	FVector LockLocationWorldSpace{ForceInit};
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ALS")
-	FQuat LockRotation{ForceInit};
+	FQuat LockRotationWorldSpace{ForceInit};
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ALS")
-	FVector3f LockComponentRelativeLocation{ForceInit};
+	FVector3f LockLocationMovementBaseSpace{ForceInit};
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ALS")
-	FQuat4f LockComponentRelativeRotation{ForceInit};
+	FQuat4f LockRotationMovementBaseSpace{ForceInit};
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ALS")
-	FVector3f LockMovementBaseRelativeLocation{ForceInit};
+	FVector3f LockLocation{ForceInit};
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ALS")
-	FQuat4f LockMovementBaseRelativeRotation{ForceInit};
+	FQuat4f LockRotation{ForceInit};
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ALS")
 	FVector3f FinalLocation{ForceInit};
@@ -52,10 +52,9 @@ struct ALS_API FAlsFeetState
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ALS")
 	FQuat4f PelvisRotation{ForceInit};
 
-	// Choose whether a foot is planted or about to plant when stopping using the foot planted animation
-	// curve. A value less than 0.5 means the foot is planted and a value more than 0.5 means the
-	// foot is still in the air. The foot planted curve also determines which foot is planted (or
-	// about to plant). Positive values mean the right foot is planted, negative values mean the left.
+	/// Indicates whether a foot is planted or about to be planted during a stop. A value less than 0.5 means the foot is planted,
+	/// while a value greater than 0.5 means the foot is still in the air. It also determines which foot is planted (or about to be
+	/// planted). Positive values indicate that the right foot is planted and negative values indicate that the left foot is planted.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ALS", Meta = (ClampMin = -1, ClampMax = 1))
 	float FootPlantedAmount{0.0f};
 
@@ -63,13 +62,19 @@ struct ALS_API FAlsFeetState
 	float FeetCrossingAmount{0.0f};
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ALS")
+	uint8 bValid : 1 {false};
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ALS")
+	uint8 bBecameValid : 1 {false};
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ALS")
 	FAlsFootState Left{
-		.ThighAxis = -FVector3f::ZAxisVector
+		.ThighAxisPelvisSpace = -FVector3f::ZAxisVector
 	};
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ALS")
 	FAlsFootState Right{
-		.ThighAxis = FVector3f::ZAxisVector
+		.ThighAxisPelvisSpace = FVector3f::ZAxisVector
 	};
 };
 

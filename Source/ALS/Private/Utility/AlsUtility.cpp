@@ -10,12 +10,12 @@
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(AlsUtility)
 
-FString UAlsUtility::NameToDisplayString(const FName& Name, const bool bNameIsBool)
+FString UAlsUtility::NameToDisplayString(const FName Name, const bool bNameIsBool)
 {
 	return FName::NameToDisplayString(Name.ToString(), bNameIsBool);
 }
 
-float UAlsUtility::GetAnimationCurveValueFromCharacter(const ACharacter* Character, const FName& CurveName)
+float UAlsUtility::GetAnimationCurveValueFromCharacter(const ACharacter* Character, const FName CurveName)
 {
 	const auto* Mesh{IsValid(Character) ? Character->GetMesh() : nullptr};
 	const auto* AnimationInstance{IsValid(Mesh) ? Mesh->GetAnimInstance() : nullptr};
@@ -23,12 +23,12 @@ float UAlsUtility::GetAnimationCurveValueFromCharacter(const ACharacter* Charact
 	return ALS_ENSURE(IsValid(AnimationInstance)) ? AnimationInstance->GetCurveValue(CurveName) : 0.0f;
 }
 
-FGameplayTagContainer UAlsUtility::GetChildTags(const FGameplayTag& Tag)
+FGameplayTagContainer UAlsUtility::GetChildTags(const FGameplayTag Tag)
 {
 	return UGameplayTagsManager::Get().RequestGameplayTagChildren(Tag);
 }
 
-FName UAlsUtility::GetSimpleTagName(const FGameplayTag& Tag)
+FName UAlsUtility::GetSimpleTagName(const FGameplayTag Tag)
 {
 	const auto TagNode{UGameplayTagsManager::Get().FindTagNode(Tag)};
 
@@ -44,32 +44,21 @@ float UAlsUtility::GetFirstPlayerPingSeconds(const UObject* WorldContext)
 	return IsValid(PlayerState) ? PlayerState->GetPingInMilliseconds() * 0.001f : 0.0f;
 }
 
-bool UAlsUtility::TryGetMovementBaseRotationSpeed(const FBasedMovementInfo& BasedMovement, FRotator& RotationSpeed)
+bool UAlsUtility::TryGetMovementBaseAngularVelocity(const FBasedMovementInfo& BasedMovement, FVector& AngularVelocity)
 {
 	if (!MovementBaseUtility::IsDynamicBase(&BasedMovement.MovementBaseInterfaceData))
 	{
-		RotationSpeed = FRotator::ZeroRotator;
+		AngularVelocity = FVector::ZeroVector;
 		return false;
 	}
 
-	const auto* MovementBaseComponent{Cast<UPrimitiveComponent>(BasedMovement.MovementBaseInterfaceData.GetMovementBaseObject())};
-	const auto* Body{IsValid(MovementBaseComponent) ? MovementBaseComponent->GetBodyInstance(BasedMovement.BoneName) : nullptr};
+	const auto* Body{BasedMovement.MovementBaseInterfaceData.GetBodyInstanceOwner()->GetBodyInstance(BasedMovement.BoneName)};
 	if (Body == nullptr)
 	{
-		RotationSpeed = FRotator::ZeroRotator;
+		AngularVelocity = FVector::ZeroVector;
 		return false;
 	}
 
-	const auto AngularVelocityVector{Body->GetUnrealWorldAngularVelocityInRadians()};
-	if (AngularVelocityVector.IsNearlyZero())
-	{
-		RotationSpeed = FRotator::ZeroRotator;
-		return false;
-	}
-
-	RotationSpeed.Roll = FMath::RadiansToDegrees(AngularVelocityVector.X);
-	RotationSpeed.Pitch = FMath::RadiansToDegrees(AngularVelocityVector.Y);
-	RotationSpeed.Yaw = FMath::RadiansToDegrees(AngularVelocityVector.Z);
-
+	AngularVelocity = Body->GetUnrealWorldAngularVelocityInRadians();
 	return true;
 }

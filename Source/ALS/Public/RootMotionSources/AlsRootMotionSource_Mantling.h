@@ -15,7 +15,7 @@ public:
 	TObjectPtr<const UAlsMantlingSettings> MantlingSettings;
 
 	UPROPERTY()
-	TWeakObjectPtr<const UPrimitiveComponent> TargetPrimitive;
+	TWeakObjectPtr<UPrimitiveComponent> TargetPrimitive;
 
 	UPROPERTY()
 	FVector StartLocation{ForceInit};

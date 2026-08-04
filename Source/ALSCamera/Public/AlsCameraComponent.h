@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Components/SkeletalMeshComponent.h"
+#include "Interfaces/MovementBaseInterface.h"
 #include "Utility/AlsMath.h"
 #include "AlsCameraComponent.generated.h"
 
@@ -45,6 +46,9 @@ protected:
 	FVector PivotLagLocation{ForceInit};
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "State", Transient)
+	FVector PivotLagLocationMovementBaseSpace{ForceInit};
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "State", Transient)
 	FVector PivotLocation{ForceInit};
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "State", Transient)
@@ -53,17 +57,14 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "State", Transient)
 	FRotator CameraRotation{ForceInit};
 
-	UPROPERTY(BlueprintReadOnly, Category = "State", Transient)
-	TObjectPtr<UPrimitiveComponent> MovementBasePrimitive;
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "State", Transient)
+	FQuat CameraRotationMovementBaseSpace{ForceInit};
+
+	UPROPERTY(Transient)
+	FMovementBaseInterfaceData MovementBaseInterfaceData;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "State", Transient)
 	FName MovementBaseBoneName;
-
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "State", Transient)
-	FVector PivotMovementBaseRelativeLagLocation{ForceInit};
-
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "State", Transient)
-	FQuat CameraMovementBaseRelativeRotation{ForceInit};
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "State", Transient, Meta = (ClampMin = 0, ClampMax = 1, ForceUnits = "%"))
 	float TraceDistanceRatio{1.0f};
@@ -150,7 +151,7 @@ public:
 	void DisplayDebug(const UCanvas* Canvas, const FDebugDisplayInfo& DisplayInfo, float& VerticalLocation) const;
 
 private:
-	static void DisplayDebugHeader(const UCanvas* Canvas, const FText& HeaderText, const FLinearColor& HeaderColor,
+	static void DisplayDebugHeader(const UCanvas* Canvas, const FText& HeaderText, FLinearColor HeaderColor,
 	                               float Scale, float HorizontalLocation, float& VerticalLocation);
 
 	void DisplayDebugCurves(const UCanvas* Canvas, float Scale, float HorizontalLocation, float& VerticalLocation) const;

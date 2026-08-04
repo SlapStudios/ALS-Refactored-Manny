@@ -283,9 +283,9 @@ UAlsCharacterMovementComponent::UAlsCharacterMovementComponent()
 bool UAlsCharacterMovementComponent::CanEditChange(const FProperty* Property) const
 {
 	return Super::CanEditChange(Property) &&
-	       Property->GetFName() != GET_MEMBER_NAME_STRING_VIEW_CHECKED(ThisClass, RotationRate) &&
-	       Property->GetFName() != GET_MEMBER_NAME_STRING_VIEW_CHECKED(ThisClass, bUseControllerDesiredRotation) &&
-	       Property->GetFName() != GET_MEMBER_NAME_STRING_VIEW_CHECKED(ThisClass, bOrientRotationToMovement);
+	       Property->GetFName() != GET_MEMBER_NAME_ANSI_STRING_VIEW_CHECKED(ThisClass, RotationRate) &&
+	       Property->GetFName() != GET_MEMBER_NAME_ANSI_STRING_VIEW_CHECKED(ThisClass, bUseControllerDesiredRotation) &&
+	       Property->GetFName() != GET_MEMBER_NAME_ANSI_STRING_VIEW_CHECKED(ThisClass, bOrientRotationToMovement);
 }
 #endif
 
@@ -303,14 +303,15 @@ FVector UAlsCharacterMovementComponent::ConsumeInputVector()
 
 	if (bInputBlocked)
 	{
-		return FVector::ZeroVector;
+		InputVector = FVector::ZeroVector;
+		return InputVector;
 	}
 
-	FRotator BaseRotationSpeed;
-	if (!bIgnoreBaseRotation && UAlsUtility::TryGetMovementBaseRotationSpeed(CharacterOwner->GetBasedMovement(), BaseRotationSpeed))
+	FVector AngularVelocity;
+	if (!bIgnoreBaseRotation && UAlsUtility::TryGetMovementBaseAngularVelocity(CharacterOwner->GetBasedMovement(), AngularVelocity))
 	{
-		// Offset the input vector to keep it relative to the movement base.
-		InputVector = (BaseRotationSpeed * GetWorld()->GetDeltaSeconds()).RotateVector(InputVector);
+		// Offset the input to keep it in the movement base space.
+		InputVector = FQuat::MakeFromRotationVector(AngularVelocity * GetWorld()->GetDeltaSeconds()).RotateVector(InputVector);
 	}
 
 	return InputVector;
@@ -413,11 +414,11 @@ bool UAlsCharacterMovementComponent::ApplyRequestedMove(const float DeltaTime, c
 void UAlsCharacterMovementComponent::CalcVelocity(const float DeltaTime, const float Friction,
                                                   const bool bFluid, const float BrakingDeceleration)
 {
-	FRotator BaseRotationSpeed;
-	if (!bIgnoreBaseRotation && UAlsUtility::TryGetMovementBaseRotationSpeed(CharacterOwner->GetBasedMovement(), BaseRotationSpeed))
+	FVector AngularVelocity;
+	if (!bIgnoreBaseRotation && UAlsUtility::TryGetMovementBaseAngularVelocity(CharacterOwner->GetBasedMovement(), AngularVelocity))
 	{
-		// Offset the velocity to keep it relative to the movement base.
-		Velocity = (BaseRotationSpeed * DeltaTime).RotateVector(Velocity);
+		// Offset the velocity to keep it in the movement base space.
+		Velocity = FQuat::MakeFromRotationVector(AngularVelocity * DeltaTime).RotateVector(Velocity);
 	}
 
 	Super::CalcVelocity(DeltaTime, Friction, bFluid, BrakingDeceleration);
@@ -668,8 +669,8 @@ void UAlsCharacterMovementComponent::PhysWalking(const float DeltaTime, int32 It
 #endif
 
 		// Save current values
-		UPrimitiveComponent * const OldBase = GetMovementBase();
-		const FVector PreviousBaseLocation = (OldBase != NULL) ? OldBase->GetComponentLocation() : FVector::ZeroVector;
+		FMovementBaseInterfaceData* OldMovementBaseInterfaceData = GetMovementBaseInterfaceData_Mutable();
+		const FVector PreviousBaseLocation = OldMovementBaseInterfaceData && OldMovementBaseInterfaceData->IsValid() ? OldMovementBaseInterfaceData->GetBodyInstanceOwner()->GetPhysicsOwnerTransform().GetLocation() : FVector::ZeroVector;
 		const FVector OldLocation = UpdatedComponent->GetComponentLocation();
 		const FFindFloorResult OldFloor = CurrentFloor;
 
@@ -759,7 +760,7 @@ void UAlsCharacterMovementComponent::PhysWalking(const float DeltaTime, int32 It
 			if ( !NewDelta.IsZero() )
 			{
 				// first revert this move
-				RevertMove(OldLocation, OldBase, PreviousBaseLocation, OldFloor, false);
+				RevertMove(OldLocation, OldMovementBaseInterfaceData, PreviousBaseLocation, OldFloor, false);
 
 				// avoid repeated ledge moves if the first one fails
 				bTriedLedgeMove = true;
@@ -774,7 +775,8 @@ void UAlsCharacterMovementComponent::PhysWalking(const float DeltaTime, int32 It
 			{
 				// see if it is OK to jump
 				// @todo collision : only thing that can be problem is that oldbase has world collision on
-				bool bMustJump = bZeroDelta || (OldBase == NULL || (!OldBase->IsQueryCollisionEnabled() && MovementBaseUtility::IsDynamicBase(OldBase)));
+				const bool bOldMovementBaseValid = OldMovementBaseInterfaceData && OldMovementBaseInterfaceData->IsValid();
+				bool bMustJump = bZeroDelta || (!bOldMovementBaseValid || (!CollisionEnabledHasQuery(OldMovementBaseInterfaceData->GetBodyInstanceOwner()->GetCollisionEnabled()) && MovementBaseUtility::IsDynamicBase(OldMovementBaseInterfaceData)));
 				if ( (bMustJump || !bCheckedFall) && CheckFall(OldFloor, CurrentFloor.HitResult, Delta, OldLocation, remainingTime, timeTick, Iterations, bMustJump) )
 				{
 					return;
@@ -782,7 +784,7 @@ void UAlsCharacterMovementComponent::PhysWalking(const float DeltaTime, int32 It
 				bCheckedFall = true;
 
 				// revert this move
-				RevertMove(OldLocation, OldBase, PreviousBaseLocation, OldFloor, true);
+				RevertMove(OldLocation, OldMovementBaseInterfaceData, PreviousBaseLocation, OldFloor, true);
 				remainingTime = 0.f;
 				break;
 			}
@@ -831,7 +833,8 @@ void UAlsCharacterMovementComponent::PhysWalking(const float DeltaTime, int32 It
 			// See if we need to start falling.
 			if (!CurrentFloor.IsWalkableFloor() && !CurrentFloor.HitResult.bStartPenetrating)
 			{
-				const bool bMustJump = bJustTeleported || bZeroDelta || (OldBase == NULL || (!OldBase->IsQueryCollisionEnabled() && MovementBaseUtility::IsDynamicBase(OldBase)));
+				const bool bOldMovementBaseValid = OldMovementBaseInterfaceData && OldMovementBaseInterfaceData->IsValid();
+				const bool bMustJump = bJustTeleported || bZeroDelta || (!bOldMovementBaseValid || (!CollisionEnabledHasQuery(OldMovementBaseInterfaceData->GetBodyInstanceOwner()->GetCollisionEnabled()) && MovementBaseUtility::IsDynamicBase(OldMovementBaseInterfaceData)));
 				if ((bMustJump || !bCheckedFall) && CheckFall(OldFloor, CurrentFloor.HitResult, Delta, OldLocation, remainingTime, timeTick, Iterations, bMustJump) )
 				{
 					return;
@@ -1044,7 +1047,7 @@ void UAlsCharacterMovementComponent::ComputeFloorDist(const FVector& CapsuleLoca
 
 	// ReSharper disable All
 
-	// UE_LOG(LogCharacterMovement, VeryVerbose, TEXT("[Role:%d] ComputeFloorDist: %s at location %s"), (int32)CharacterOwner->GetLocalRole(), *GetNameSafe(CharacterOwner), *CapsuleLocation.ToString());
+	// UE_LOGF(LogCharacterMovement, VeryVerbose, "[Role:%d] ComputeFloorDist: %ls at location %ls", (int32)CharacterOwner->GetLocalRole(), *GetNameSafe(CharacterOwner), *CapsuleLocation.ToString());
 	OutFloorResult.Clear();
 
 	float PawnRadius, PawnHalfHeight;
@@ -1291,7 +1294,7 @@ void UAlsCharacterMovementComponent::MoveAutonomous(const float ClientTimeStamp,
 		auto* Character{Cast<AAlsCharacter>(CharacterOwner)};
 		if (IsValid(Character))
 		{
-			Character->CorrectViewNetworkSmoothing(NewControlRotation, false);
+			Character->CorrectViewNetworkSmoothing(NewControlRotation);
 		}
 
 		PreviousControlRotation = NewControlRotation;
@@ -1325,7 +1328,7 @@ void UAlsCharacterMovementComponent::RefreshGaitSettings()
 	GaitSettings = ALS_ENSURE(NewGaitSettings != nullptr) ? *NewGaitSettings : FAlsMovementGaitSettings{};
 }
 
-void UAlsCharacterMovementComponent::SetRotationMode(const FGameplayTag& NewRotationMode)
+void UAlsCharacterMovementComponent::SetRotationMode(const FGameplayTag NewRotationMode)
 {
 	if (RotationMode != NewRotationMode)
 	{
@@ -1335,7 +1338,7 @@ void UAlsCharacterMovementComponent::SetRotationMode(const FGameplayTag& NewRota
 	}
 }
 
-void UAlsCharacterMovementComponent::SetStance(const FGameplayTag& NewStance)
+void UAlsCharacterMovementComponent::SetStance(const FGameplayTag NewStance)
 {
 	if (Stance != NewStance)
 	{
@@ -1365,14 +1368,14 @@ void UAlsCharacterMovementComponent::RefreshGroundedMovementSettings()
 		// Ideally we should use actor rotation here instead of view rotation, but we can't do that because ALS has
 		// full control over actor rotation and it is not synchronized over the network, so it would cause jitter.
 
-		const auto RelativeViewRotation{UAlsRotation::GetTwist(ViewRotation.Quaternion(), -GetGravityDirection())};
+		const auto ViewRotationGravitySpace{UAlsRotation::GetTwist(ViewRotation.Quaternion(), -GetGravityDirection())};
 
-		const FVector2D RelativeVelocity{RelativeViewRotation.UnrotateVector(Velocity)};
-		const auto VelocityAngle{UAlsVector::DirectionToAngle(RelativeVelocity)};
+		const FVector2D VelocityViewSpace{ViewRotationGravitySpace.UnrotateVector(Velocity)};
+		const auto VelocityYawAngleViewSpace{UAlsVector::DirectionToAngle(VelocityViewSpace)};
 
 		const auto ForwardSpeedAmount{
 			1.0f - UAlsMath::Clamp01(MovementSettings->VelocityAngleToSpeedInterpolationRange
-			                                         .GetRangePct(static_cast<float>(FMath::Abs(VelocityAngle))))
+			                                         .GetRangePct(static_cast<float>(FMath::Abs(VelocityYawAngleViewSpace))))
 		};
 
 		WalkSpeed = FMath::Lerp(GaitSettings.WalkBackwardSpeed, GaitSettings.WalkForwardSpeed, ForwardSpeedAmount);

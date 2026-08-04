@@ -23,14 +23,14 @@ struct ALS_API FAlsSpineState
 	float LastYawAngle{0.0f};
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ALS", Meta = (ClampMin = -180, ClampMax = 180, ForceUnits = "deg"))
-	float CurrentYawAngle{0.0f};
+	float LastYawAngleWorldSpace{0.0f};
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ALS", Meta = (ClampMin = -180, ClampMax = 180, ForceUnits = "deg"))
 	float YawAngle{0.0f};
 
+	float FinalYawAngle{0.0f};
+
+	// Fork: pitch da spine para o aiming vertical (independente do yaw do upstream).
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ALS", Meta = (ClampMin = -180, ClampMax = 180, ForceUnits = "deg"))
 	float PitchAngle{0.0f};
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ALS", Meta = (ClampMin = -180, ClampMax = 180, ForceUnits = "deg"))
-	float LastActorYawAngle{0.0f};
 };

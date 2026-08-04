@@ -25,6 +25,7 @@
 #include "AlsAnimationInstance.generated.h"
 
 class UAlsLinkedAnimationInstance;
+class UAlsAnimationInstanceSettings;
 class AAlsCharacter;
 
 UCLASS()
@@ -41,12 +42,18 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "State", Transient)
 	TObjectPtr<AAlsCharacter> Character;
 
-	// Used to indicate that the animation instance has not been updated for a long time
-	// and its current state may not be correct (such as foot location used in foot lock).
+	/// Indicates that the animation instance has not been updated in a long time, so
+	/// its current state may not be correct (such as foot location used in foot lock).
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "State", Transient)
 	uint8 bPendingUpdate : 1 {true};
 
-	// Time of the last teleportation event.
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "State", Transient, Meta = (ClampMin = 0, ForceUnits = "s"))
+	float DeltaTimeWithoutTimeDilation{1.0f};
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "State", Transient, Meta = (ForceUnits = "x"))
+	float PreviousGlobalTimeDilation{1.0f};
+
+	/// Time of the last teleportation event.
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "State", Transient, Meta = (ClampMin = 0))
 	double TeleportedTime{0.0f};
 
@@ -163,7 +170,7 @@ protected:
 	FAlsControlRigInput GetControlRigInput() const;
 	
 	UFUNCTION(BlueprintPure, Category = "ALS|Animation Instance", Meta = (BlueprintThreadSafe, ReturnDisplayName = "View Mode"))
-	const FGameplayTag& GetViewMode() const;
+	FGameplayTag GetViewMode() const;
 
 public:
 	void MarkPendingUpdate();
@@ -213,7 +220,7 @@ protected:
 	// Grounded
 
 public:
-	void SetGroundedEntryMode(const FGameplayTag& NewGroundedEntryMode);
+	void SetGroundedEntryMode(FGameplayTag NewGroundedEntryMode);
 
 protected:
 	UFUNCTION(BlueprintCallable, Category = "ALS|Animation Instance", Meta = (BlueprintThreadSafe))
@@ -227,9 +234,9 @@ protected:
 	void RefreshGrounded();
 
 private:
-	FVector3f GetRelativeVelocity() const;
+	FVector3f GetVelocity() const;
 
-	FVector2f GetRelativeAccelerationAmount() const;
+	FVector2f GetAccelerationAmount() const;
 
 	void RefreshVelocityBlend();
 
@@ -243,9 +250,9 @@ protected:
 	void SetHipsDirection(EAlsHipsDirection NewHipsDirection);
 
 private:
-	void RefreshMovementDirection(float ViewRelativeVelocityYawAngle);
+	void RefreshMovementDirection(float VelocityYawAngleViewSpace);
 
-	void RefreshRotationYawOffsets(float ViewRelativeVelocityYawAngle);
+	void RefreshRotationYawOffsets(float VelocityYawAngleViewSpace);
 
 protected:
 	UFUNCTION(BlueprintCallable, Category = "ALS|Animation Instance", Meta = (BlueprintThreadSafe))
@@ -291,6 +298,8 @@ private:
 	void ProcessFootLockBaseChange(const FAlsFootUpdateContext& Context) const;
 
 	void RefreshFootLock(const FAlsFootUpdateContext& Context) const;
+
+	void ConstrainFootLock(FAlsFootState& FootState) const;
 
 	// Transitions
 
@@ -359,7 +368,7 @@ public:
 	// Utility
 
 public:
-	float GetCurveValueClamped01(const FName& CurveName) const;
+	float GetCurveValueClamped01(FName CurveName) const;
 };
 
 inline UAlsAnimationInstanceSettings* UAlsAnimationInstance::GetSettingsUnsafe() const
@@ -377,7 +386,7 @@ inline void UAlsAnimationInstance::MarkTeleported()
 	TeleportedTime = GetWorld()->GetTimeSeconds();
 }
 
-inline void UAlsAnimationInstance::SetGroundedEntryMode(const FGameplayTag& NewGroundedEntryMode)
+inline void UAlsAnimationInstance::SetGroundedEntryMode(const FGameplayTag NewGroundedEntryMode)
 {
 	GroundedEntryMode = NewGroundedEntryMode;
 }
