@@ -653,6 +653,8 @@ void AAlsCharacter::NotifyLocomotionModeChanged(const FGameplayTag PreviousLocom
 	OnLocomotionModeChanged(PreviousLocomotionMode);
 }
 
+void AAlsCharacter::OnLocomotionModeChanged_Implementation(FGameplayTag PreviousLocomotionMode) {}
+
 void AAlsCharacter::SetDesiredAiming(const bool bNewDesiredAiming)
 {
 	SetDesiredAiming(bNewDesiredAiming, true);
@@ -763,6 +765,8 @@ void AAlsCharacter::NotifyRotationModeChanged(const FGameplayTag PreviousRotatio
 
 	OnRotationModeChanged(PreviousRotationMode);
 }
+
+void AAlsCharacter::OnRotationModeChanged_Implementation(FGameplayTag PreviousRotationMode) {}
 
 void AAlsCharacter::RefreshRotationMode()
 {
@@ -1241,6 +1245,8 @@ void AAlsCharacter::NotifyLocomotionActionChanged(const FGameplayTag PreviousLoc
 
 	OnLocomotionActionChanged(PreviousLocomotionAction);
 }
+
+void AAlsCharacter::OnLocomotionActionChanged_Implementation(FGameplayTag PreviousLocomotionAction) {}
 
 FRotator AAlsCharacter::GetViewRotation() const
 {

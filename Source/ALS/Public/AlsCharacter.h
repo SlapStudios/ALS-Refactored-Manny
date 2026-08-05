@@ -173,7 +173,7 @@ private:
 	// View Mode
 
 public:
-	FGameplayTag GetViewMode() const;
+	virtual FGameplayTag GetViewMode() const;
 
 	UFUNCTION(BlueprintCallable, Category = "ALS|Character", Meta = (AutoCreateRefTerm = "NewViewMode"))
 	void SetViewMode(FGameplayTag NewViewMode);
@@ -200,7 +200,7 @@ protected:
 
 	virtual void NotifyLocomotionModeChanged(FGameplayTag PreviousLocomotionMode);
 
-	UFUNCTION(BlueprintImplementableEvent, Category = "Als Character")
+	UFUNCTION(BlueprintNativeEvent, Category = "Als Character")
 	void OnLocomotionModeChanged(FGameplayTag PreviousLocomotionMode);
 
 	// Desired Aiming
@@ -254,7 +254,7 @@ protected:
 
 	virtual void NotifyRotationModeChanged(FGameplayTag PreviousRotationMode);
 
-	UFUNCTION(BlueprintImplementableEvent, Category = "Als Character")
+	UFUNCTION(BlueprintNativeEvent, Category = "Als Character")
 	void OnRotationModeChanged(FGameplayTag PreviousRotationMode);
 
 	virtual void RefreshRotationMode();
@@ -370,7 +370,7 @@ public:
 protected:
 	virtual void NotifyLocomotionActionChanged(FGameplayTag PreviousLocomotionAction);
 
-	UFUNCTION(BlueprintImplementableEvent, Category = "Als Character")
+	UFUNCTION(BlueprintNativeEvent, Category = "Als Character")
 	void OnLocomotionActionChanged(FGameplayTag PreviousLocomotionAction);
 
 	// Input
